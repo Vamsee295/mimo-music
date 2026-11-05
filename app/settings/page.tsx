@@ -4,6 +4,7 @@ import { testKey } from "@/lib/youtube";
 import { useLibrary } from "@/lib/library";
 import { usePlayer } from "@/lib/store";
 import { PageHeader } from "@/components/ui";
+import { askConfirm } from "@/components/Ask";
 
 const COUNTRIES = [
   ["in", "India"],
@@ -20,7 +21,8 @@ const COUNTRIES = [
   ["ae", "UAE"],
 ] as const;
 
-const ACCENTS = ["#c8603a", "#2f6f6a", "#d9a21b", "#3c5fb0", "#b8325e", "#191614", "#fa2d48"];
+// black is fine: on the dark theme <Boot> lifts it to a light warm grey (readableAccent), so it never disappears
+const ACCENTS = ["#c8603a", "#2f6f6a", "#d9a21b", "#3c5fb0", "#b8325e", "#4f7a3a", "#fa2d48", "#191614"];
 
 function Group({ title, id, children }: { title: string; id?: string; children: ReactNode }) {
   return (
@@ -85,11 +87,13 @@ export default function SettingsPage() {
       </Group>
 
       <Group title="Full Songs (YouTube)" id="full-songs">
-        <Row label="Play Full Songs" hint="Uses YouTube's official player. The video stays on screen while it plays, and music stops when the app is in the background.">
-          <Toggle label="Play full songs" on={settings.fullSongs} onChange={(fullSongs) => setSettings({ fullSongs })} />
+        <Row label="Data Saver" hint="Keeps the YouTube video small, so YouTube usually streams 144–240p and uses much less mobile data">
+          <Toggle label="Data saver" on={settings.dataSaver} onChange={(dataSaver) => setSettings({ dataSaver })} />
         </Row>
         <KeySetup />
       </Group>
+
+      <SaveBar />
 
       <Group title="Appearance">
         <Row label="Theme" hint="Editorial is the cream paper look; Dark is easier at night">
@@ -111,10 +115,10 @@ export default function SettingsPage() {
             {ACCENTS.map((c) => (
               <button
                 key={c}
-                aria-label={`Accent ${c}`}
+                aria-label={c === "#191614" ? "Accent black" : `Accent ${c}`}
                 aria-pressed={settings.accent === c}
                 onClick={() => setSettings({ accent: c })}
-                className={`size-7 rounded-full transition ${settings.accent === c ? "ring-2 ring-ink ring-offset-2 ring-offset-card" : ""}`}
+                className={`size-7 rounded-full border-2 border-ink/25 transition ${settings.accent === c ? "ring-2 ring-ink ring-offset-2 ring-offset-card" : ""}`}
                 style={{ background: c }}
               />
             ))}
@@ -127,7 +131,7 @@ export default function SettingsPage() {
 
       <Group title="Storage">
         <Row label="Clear Recently Played">
-          <button className={danger} onClick={() => confirm("Clear listening history?") && clearHistory()}>
+          <button className={danger} onClick={async () => (await askConfirm("Clear listening history?", "Clear")) && clearHistory()}>
             Clear
           </button>
         </Row>
@@ -137,7 +141,7 @@ export default function SettingsPage() {
           </button>
         </Row>
         <Row label="Reset Library" hint="Loved songs, albums, playlists and settings">
-          <button className={danger} onClick={() => confirm("Erase your whole library on this device?") && resetAll()}>
+          <button className={danger} onClick={async () => (await askConfirm("Erase your whole library on this device?", "Erase")) && resetAll()}>
             Reset
           </button>
         </Row>
@@ -147,10 +151,50 @@ export default function SettingsPage() {
         <Row label="Mimo" hint="Free music app">
           <span className="text-sm text-ink/40">v0.2.0</span>
         </Row>
-        <Row label="Music catalog" hint="Apple iTunes public API · previews, full songs via YouTube">
+        <Row label="Music catalog" hint="Apple iTunes public API · full songs via YouTube or Your Music">
           <span />
         </Row>
       </Group>
+
+    </div>
+  );
+}
+
+/** Explicit Save: writes settings, then reads them back from storage to prove they'll survive a reload. */
+function SaveBar() {
+  const settings = useLibrary((s) => s.settings);
+  const [state, setState] = useState<{ at: string; ok: boolean } | null>(null);
+  const [seen, setSeen] = useState(settings);
+  if (seen !== settings) {
+    // a setting changed since the last Save → ask again (adjusting state during render, no effect needed)
+    setSeen(settings);
+    setState(null);
+  }
+
+  const save = () => {
+    useLibrary.setState({}); // triggers a write of the current state
+    let ok = false;
+    try {
+      const stored = JSON.parse(localStorage.getItem("library") ?? "{}")?.state?.settings;
+      ok = JSON.stringify(stored) === JSON.stringify(useLibrary.getState().settings);
+    } catch {
+      ok = false;
+    }
+    setState({ ok, at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) });
+  };
+
+  return (
+    <div className="-mt-4 mb-8">
+      <div className="brut flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-card px-4 py-3">
+        <p role="status" aria-live="polite" className={`text-sm ${state ? (state.ok ? "text-note" : "text-accent") : "text-ink/65"}`}>
+          {!state && "Changes apply right away — press Save to lock them in."}
+          {state?.ok && `✓ Saved at ${state.at} · kept after reload`}
+          {state && !state.ok && "Couldn't save — this browser is blocking storage (private window or storage turned off)."}
+        </p>
+        <button onClick={save} className="brut brut-press label-cond rounded-xl bg-accent px-5 py-2 text-[17px] text-paper">
+          Save settings
+        </button>
+      </div>
     </div>
   );
 }

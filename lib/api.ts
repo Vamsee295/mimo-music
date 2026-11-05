@@ -13,6 +13,7 @@ export type Album = {
   count: number;
   explicit: boolean;
   copyright: string;
+  added?: number; // when you saved it (Library "Recents" sort)
 };
 export type Artist = { id: string; name: string; genre: string };
 
