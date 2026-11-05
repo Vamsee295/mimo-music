@@ -1,5 +1,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { appBooted, guardedStorage } from "./safeStorage";
+
+let playerLoaded = false; // flips once saved data has been read; blocks writes before that
 
 export type Track = {
   id: string;
@@ -148,7 +151,14 @@ export const usePlayer = create<State & Actions>()(
     {
       name: "player",
       skipHydration: true,
+      storage: guardedStorage(() => playerLoaded),
+      onRehydrateStorage: () => () => {
+        playerLoaded = true; // saved data is in memory now → writes are safe
+      },
       partialize: (st) => ({ ...st, playing: false, sleepAt: null, sleepAfterTrack: false }),
     },
   ),
 );
+
+// dev hot-reload re-creates this module with default state: reload saved data instead of overwriting it
+if (appBooted()) usePlayer.persist.rehydrate();

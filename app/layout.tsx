@@ -3,6 +3,9 @@ import { Suspense } from "react";
 import { Anton, Barlow_Condensed, Caveat, Inter, JetBrains_Mono } from "next/font/google";
 import { PlayerBar } from "@/components/PlayerBar";
 import { Boot, Sidebar, TabBar } from "@/components/Nav";
+import { Toaster } from "@/components/Swipe";
+import { AskDialog } from "@/components/Ask";
+import { PageTransition } from "@/components/PageTransition";
 import "./globals.css";
 
 const inter = Inter({ variable: "--font-inter", subsets: ["latin"] });
@@ -31,9 +34,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <Sidebar />
         </Suspense>
         <main className="flex-1 overflow-y-auto overflow-x-hidden px-4 pb-40 pt-[max(1.25rem,env(safe-area-inset-top))] md:px-8 md:pb-28 md:pt-8">
-          <Suspense>{children}</Suspense>
+          <Suspense>
+            <PageTransition>{children}</PageTransition>
+          </Suspense>
         </main>
         <PlayerBar />
+        <Toaster />
+        <AskDialog />
         <Suspense>
           <TabBar />
         </Suspense>

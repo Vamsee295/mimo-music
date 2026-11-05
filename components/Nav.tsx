@@ -14,9 +14,11 @@ const main: Item[] = [
   ["/new", "New", "grid"],
 ];
 const library: Item[] = [
+  ["/library?tab=library", "Library", "library"],
+  ["/library?tab=all", "Songs", "note"],
+  ["/library?tab=device", "Your Music", "device"],
   ["/library?tab=recent", "Recently Played", "clock"],
-  ["/library?tab=songs", "Loved Songs", "heart"],
-  ["/library?tab=albums", "Albums", "library"],
+  ["/liked", "Liked Songs", "heart"],
   ["/library?tab=artists", "Artists", "user"],
 ];
 const tabs: Item[] = [
@@ -37,6 +39,23 @@ function useActive() {
 }
 
 /** Rehydrates persisted stores and applies appearance settings. */
+/** Relative luminance 0..1 of a #rrggbb colour. */
+const luminance = (hex: string) => {
+  const [r, g, b] = [1, 3, 5].map((i) => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+/** Keep accent text/icons visible: lift very dark accents on the dark theme, deepen very light ones on cream. */
+export const readableAccent = (hex: string, theme: string) => {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return hex;
+  const l = luminance(hex);
+  if (theme === "dark" && l < 0.12) return `color-mix(in oklab, ${hex} 35%, #f5efe6)`;
+  if (theme !== "dark" && l > 0.6) return `color-mix(in oklab, ${hex} 55%, #191614)`;
+  return hex;
+};
+
 const RAIL = 72; // collapsed width
 const MIN = 200;
 const MAX = 380;
@@ -47,6 +66,7 @@ export function Boot() {
   useEffect(() => {
     usePlayer.persist.rehydrate();
     useLibrary.persist.rehydrate();
+    (window as { __mimoBooted?: boolean }).__mimoBooted = true;
     // Another tab changed the library (e.g. pasted a YouTube key in Settings) → reload it here too.
     // Without this, this tab's next save (listening time every 10s) would overwrite it with stale data.
     const onStorage = (e: StorageEvent) => {
@@ -56,9 +76,11 @@ export function Boot() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
   useEffect(() => {
-    document.documentElement.style.setProperty("--accent", accent);
+    document.documentElement.style.setProperty("--accent", readableAccent(accent, theme));
+    // dark "islands" (song page, photo tiles, artist header) stay dark in both themes → they need the dark-safe accent
+    document.documentElement.style.setProperty("--accent-dark", readableAccent(accent, "dark"));
     document.documentElement.classList.toggle("reduce-motion", reduceMotion);
-  }, [accent, reduceMotion]);
+  }, [accent, reduceMotion, theme]);
   useEffect(() => {
     const html = document.documentElement;
     html.classList.toggle("theme-dark", theme === "dark");
@@ -86,7 +108,6 @@ export function Boot() {
 
 export function Sidebar() {
   const active = useActive();
-  const playlists = useLibrary((s) => s.playlists);
   const name = useLibrary((s) => s.name);
   const { sidebarCollapsed: collapsed, sidebarWidth: width } = useLibrary((s) => s.settings);
   const setSettings = useLibrary((s) => s.setSettings);
@@ -140,7 +161,7 @@ export function Sidebar() {
       style={{ width: "var(--sb, 240px)" }}
       className={`relative hidden shrink-0 border-r-[2.4px] border-[var(--line)] bg-paper/70 md:block ${dragging ? "select-none" : "transition-[width] duration-200 ease-out"}`}
     >
-      <div className={`no-scrollbar flex h-full flex-col gap-0.5 overflow-y-auto overflow-x-hidden pb-28 pt-4 ${collapsed ? "px-3" : "px-4"}`}>
+      <div className={`no-scrollbar flex h-full flex-col gap-0.5 overflow-y-auto overflow-x-hidden pb-4 pt-4 ${collapsed ? "px-3" : "px-4"}`}>
         <div className={`mb-5 flex h-9 items-center ${collapsed ? "justify-center" : "justify-between pl-3"}`}>
           {!collapsed && (
             <Link href="/" className="flex items-center gap-2">
@@ -163,16 +184,6 @@ export function Sidebar() {
 
         {collapsed ? <hr className="mx-2 my-3 border-t-2 border-dashed border-ink/20" /> : <p className="eyebrow mb-1.5 mt-7 px-3">Library</p>}
         {library.map(link)}
-
-        {collapsed ? (
-          <hr className="mx-2 my-3 border-t-2 border-dashed border-ink/20" />
-        ) : (
-          <p className="eyebrow mb-1.5 mt-7 flex items-center justify-between px-3">
-            Playlists
-            <NewPlaylistButton />
-          </p>
-        )}
-        {playlists.map((p) => link([`/playlist?id=${p.id}`, p.name, "queue"]))}
 
         <div className="mt-auto flex flex-col gap-0.5 pt-6">
           {link(["/settings", "Settings", "settings"])}
@@ -213,22 +224,6 @@ export function Sidebar() {
         />
       </div>
     </nav>
-  );
-}
-
-export function NewPlaylistButton() {
-  const create = useLibrary((s) => s.createPlaylist);
-  return (
-    <button
-      aria-label="New playlist"
-      className="text-ink/50 hover:text-ink"
-      onClick={() => {
-        const n = prompt("Playlist name", "My Playlist");
-        if (n?.trim()) create(n.trim());
-      }}
-    >
-      <Icon name="plus" className="size-4" />
-    </button>
   );
 }
 

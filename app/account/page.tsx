@@ -13,7 +13,9 @@ export default function AccountPage() {
   const max = top[0]?.[1] ?? 1;
 
   const exportLibrary = () => {
-    const { name, liked, albums, playlists, history, settings, listening } = lib;
+    const { name, liked, albums, playlists, history, listening } = lib;
+    // never put the API key in a file people share
+    const settings = Object.fromEntries(Object.entries(lib.settings).filter(([k]) => k !== "ytKey"));
     const blob = new Blob([JSON.stringify({ name, liked, albums, playlists, history, settings, listening }, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -91,11 +93,12 @@ export default function AccountPage() {
   );
 }
 
-/** 3h 05m · 42m · 0m */
+/** 3h 05m · 42m · 35s */
 const dur = (sec: number) => {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
-  return h ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m`;
+  if (h) return `${h}h ${String(m).padStart(2, "0")}m`;
+  return m ? `${m}m` : `${Math.round(sec)}s`; // under a minute: show seconds, not "0m"
 };
 const monthName = (k: string, style: "long" | "short" = "long") => {
   const [y, m] = k.split("-").map(Number);
@@ -128,7 +131,7 @@ function ListeningTime({ listening }: { listening: Record<string, MonthStats> })
             <p className="label-cond text-[15px] text-ink/60">{monthName(thisKey)}</p>
             <p className="display text-[64px] leading-none md:text-[80px]">{dur(secs)}</p>
             <p className="mt-2 text-sm text-ink/60">
-              {Math.round(secs / 60).toLocaleString()} minutes this month
+              {Math.floor(secs / 60).toLocaleString()} min {Math.round(secs % 60)} sec this month
               {change !== null && (
                 <span className={`ml-2 font-semibold ${change >= 0 ? "text-note" : "text-accent"}`}>
                   {change >= 0 ? "▲" : "▼"} {Math.abs(change)}% vs {monthName(lastKey, "short").split(" ")[0]}

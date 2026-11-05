@@ -25,6 +25,7 @@
   --line: rgb(245 239 230 / 0.22);
   --hard: #000;
   --dots: rgb(245 239 230 / 0.05);
+  --accent: var(--accent-dark, #c8603a);
   color-scheme: dark;
 }
 :root {
@@ -207,5 +208,121 @@ main {
   * {
     animation-duration: 1ms !important;
     transition-duration: 1ms !important;
+  }
+}
+
+/* lyrics: breathing dots during instrumental breaks (Apple-style) */
+.lyric-dots > span {
+  animation: lyric-breathe 1.4s ease-in-out infinite;
+}
+@keyframes lyric-breathe {
+  0%,
+  100% {
+    transform: scale(0.7);
+    opacity: 0.35;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+}
+
+/* swipe-action confirmation: drop in, hold, fade */
+.toast {
+  animation: toast 1.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+@keyframes toast {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -12px);
+  }
+  12%,
+  80% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+}
+
+/* ── page transitions (React <ViewTransition>, see components/PageTransition.tsx) ──
+   Material shared-axis X: old page drifts left and fades fast, new page slides in from the right. */
+::view-transition {
+  pointer-events: none; /* taps during the slide reach the new page */
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none; /* chrome (sidebar, player) doesn't change → no whole-screen crossfade */
+}
+::view-transition-old(.page-out) {
+  animation: page-out 160ms cubic-bezier(0.3, 0, 0.8, 0.15) both;
+}
+::view-transition-new(.page-in) {
+  animation: page-in 340ms cubic-bezier(0.05, 0.7, 0.1, 1) 60ms both;
+}
+@keyframes page-out {
+  to {
+    opacity: 0;
+    translate: -40px 0;
+  }
+}
+@keyframes page-in {
+  from {
+    opacity: 0;
+    translate: 56px 0;
+  }
+}
+.reduce-motion::view-transition-group(*),
+.reduce-motion::view-transition-old(*),
+.reduce-motion::view-transition-new(*) {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+/* menus, sheets and dialogs grow in from where you tapped instead of popping */
+.pop-in {
+  animation: pop-in 220ms cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
+  transform-origin: top right;
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    scale: 0.94;
+    translate: 0 -6px;
+  }
+}
+@media (max-width: 767px) {
+  .pop-in.sheet {
+    animation: sheet-in 300ms cubic-bezier(0.32, 0.72, 0, 1) both;
+  }
+}
+@keyframes sheet-in {
+  from {
+    translate: 0 110%;
+  }
+}
+dialog.ask[open] {
+  animation: pop-in 240ms cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
+  transform-origin: center;
+}
+dialog.ask[open]::backdrop {
+  animation: fade-in 200ms ease both;
+}
+
+/* every tap gets a small press, like a native app */
+@layer base {
+  :where(button, a, [role="button"]) {
+    transition: scale 140ms cubic-bezier(0.2, 0, 0, 1);
+  }
+  :where(button, a, [role="button"]):not(:disabled, .fixed, [aria-label^="Close"]):active {
+    scale: 0.96;
   }
 }

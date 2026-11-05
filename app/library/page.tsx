@@ -1,33 +1,53 @@
 "use client";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useLibrary } from "@/lib/library";
 import { TrackList } from "@/components/TrackRow";
-import { NewPlaylistButton } from "@/components/Nav";
-import { AlbumCard, Mosaic, PageHeader, PlayShuffle } from "@/components/ui";
+import { YourMusic } from "@/components/YourMusic";
+import { Icon } from "@/components/Icon";
+import { toast } from "@/components/Swipe";
+import { LibraryGrid } from "@/components/LibraryGrid";
+import { PageHeader, PlayShuffle } from "@/components/ui";
 
 const TABS = [
+  ["library", "Library"],
+  ["all", "Songs"],
+  ["device", "Your Music"],
   ["recent", "Recently Played"],
-  ["songs", "Songs"],
-  ["albums", "Albums"],
+  ["songs", "Liked Songs"],
   ["artists", "Artists"],
-  ["playlists", "Playlists"],
 ] as const;
 
 const Empty = ({ children }: { children: React.ReactNode }) => <p className="py-16 text-center text-ink/40">{children}</p>;
 
 export default function LibraryPage() {
-  const tab = useSearchParams().get("tab") ?? "recent";
+  const tab = useSearchParams().get("tab") ?? "library";
   const lib = useLibrary();
+  const router = useRouter();
+
+  // Spotify-style "+ Create": make it right away, then land on it to add songs and set Name & details
+  const create = () => {
+    const id = lib.createPlaylist(`My Playlist #${lib.playlists.length + 1}`);
+    toast("Added to Your Library");
+    router.push(`/playlist?id=${id}`);
+  };
 
   // Artists = everyone you've loved, saved or played (Apple derives it from your library the same way)
   const artists = new Map<string, string>();
-  [...lib.liked, ...lib.history].forEach((t) => artists.set(t.artistId, t.artist));
+  [...lib.songs, ...lib.liked, ...lib.history].forEach((t) => artists.set(t.artistId, t.artist));
   lib.albums.forEach((a) => artists.set(a.artistId, a.artist));
 
   return (
     <>
-      <PageHeader title="Your" hl="Library" eyebrow="Saved on this device" />
+      <PageHeader title="Your" hl="Library" eyebrow="Saved on this device">
+        <button
+          onClick={create}
+          className="brut label-cond flex h-11 items-center gap-2 rounded-full bg-accent px-5 text-[16px] text-paper"
+        >
+          <Icon name="plus" className="size-5" />
+          Create
+        </button>
+      </PageHeader>
       <div className="no-scrollbar -mx-4 mb-6 flex gap-2 overflow-x-auto px-4 md:mx-0 md:px-0">
         {TABS.map(([k, label]) => (
           <Link
@@ -39,6 +59,23 @@ export default function LibraryPage() {
           </Link>
         ))}
       </div>
+
+      {tab === "library" && <LibraryGrid />}
+
+      {tab === "all" &&
+        (lib.songs.length ? (
+          <>
+            <div className="mb-4 flex items-center gap-3">
+              <PlayShuffle tracks={lib.songs} />
+              <span className="font-mono text-xs text-ink/50">{lib.songs.length} songs</span>
+            </div>
+            <TrackList tracks={lib.songs} onRemove={(i) => lib.toggleSong(lib.songs[i])} removeLabel="Remove from Library" />
+          </>
+        ) : (
+          <Empty>Tap ⋯ → Add to Library on any song. Songs you love land here too.</Empty>
+        ))}
+
+      {tab === "device" && <YourMusic />}
 
       {tab === "recent" &&
         (lib.history.length ? <TrackList tracks={lib.history} /> : <Empty>Songs you play show up here.</Empty>)}
@@ -53,17 +90,6 @@ export default function LibraryPage() {
           </>
         ) : (
           <Empty>Tap ⋯ → Love on any song to save it here.</Empty>
-        ))}
-
-      {tab === "albums" &&
-        (lib.albums.length ? (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5 [&>a]:w-full">
-            {lib.albums.map((a) => (
-              <AlbumCard key={a.id} album={a} />
-            ))}
-          </div>
-        ) : (
-          <Empty>Tap + on an album page to add it.</Empty>
         ))}
 
       {tab === "artists" &&
@@ -82,26 +108,6 @@ export default function LibraryPage() {
           <Empty>Artists you listen to show up here.</Empty>
         ))}
 
-      {tab === "playlists" && (
-        <>
-          <div className="mb-4 flex items-center gap-2 text-sm text-ink/60">
-            New playlist <NewPlaylistButton />
-          </div>
-          {lib.playlists.length ? (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-              {lib.playlists.map((p) => (
-                <Link key={p.id} href={`/playlist?id=${p.id}`}>
-                  <Mosaic arts={p.tracks.map((t) => t.art)} />
-                  <p className="mt-2 truncate text-[13px] font-medium">{p.name}</p>
-                  <p className="text-[13px] text-ink/50">{p.tracks.length} songs</p>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <Empty>No playlists yet.</Empty>
-          )}
-        </>
-      )}
     </>
   );
 }
