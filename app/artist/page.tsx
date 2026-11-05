@@ -20,13 +20,13 @@ export default function ArtistPage() {
   return (
     <>
       {/* no artist photos in the free API → hero built from their latest artwork */}
-      <div className="relative -mx-4 -mt-5 mb-8 h-72 overflow-hidden md:-mx-8 md:-mt-8 md:h-80">
+      <div className="theme-dark relative -mx-4 -mt-5 mb-10 h-80 overflow-hidden border-b-[2.4px] border-[var(--ink)] bg-paper text-ink md:-mx-8 md:-mt-8 md:h-96">
         {cover && <img src={cover} alt="" className="absolute inset-0 size-full scale-110 object-cover blur-xl brightness-50" />}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#111113] via-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
         <div className="absolute inset-x-4 bottom-6 flex flex-wrap items-end justify-between gap-4 md:inset-x-8">
           <div>
-            <p className="text-sm font-semibold uppercase text-white/60">{artist.genre}</p>
-            <h1 className="text-4xl font-bold tracking-tight md:text-6xl">{artist.name}</h1>
+            <p className="eyebrow mb-2">{artist.genre} · artist</p>
+            <h1 className="display text-[52px] md:text-[96px]"><span className="hl">{artist.name}</span></h1>
           </div>
           <PlayShuffle tracks={songs} />
         </div>
@@ -74,7 +74,7 @@ function AllSongs({ artistId }: { artistId: string }) {
               <button
                 key={l}
                 onClick={() => (setLang(l), setShown(100))}
-                className={`shrink-0 rounded-full px-4 py-1.5 text-sm font-medium ${lang === l ? "bg-[var(--accent)] text-white" : "bg-white/10 text-white/70"}`}
+                className={`label-cond shrink-0 rounded-full px-4 py-1.5 text-[15px] ${lang === l ? "border-2 border-[var(--ink)] bg-ink text-paper" : "border-2 border-[var(--line)] text-ink/70 hover:bg-ink/[0.06]"}`}
               >
                 {l} <span className="opacity-60">{n}</span>
               </button>
@@ -86,7 +86,7 @@ function AllSongs({ artistId }: { artistId: string }) {
       {/* ponytail: render in pages of 100 instead of virtualising; fine up to a few thousand rows */}
       <TrackList tracks={tracks.slice(0, shown)} />
       {shown < tracks.length && (
-        <button onClick={() => setShown((n) => n + 100)} className="mt-4 w-full rounded-lg bg-white/10 py-2.5 text-sm font-medium hover:bg-white/15">
+        <button onClick={() => setShown((n) => n + 100)} className="mt-4 w-full rounded-lg bg-ink/10 py-2.5 text-sm font-medium hover:bg-ink/15">
           Show more ({tracks.length - shown} left)
         </button>
       )}

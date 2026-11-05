@@ -15,22 +15,22 @@ export function TrackMenu({ track, onRemove }: { track: Track; onRemove?: () => 
   const playlists = useLibrary((s) => s.playlists);
   const close = () => setOpen(false);
   const act = (fn: () => void) => () => (fn(), close());
-  const item = "flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-white/10 md:py-2";
+  const item = "flex w-full items-center gap-3 px-4 py-3 text-left font-medium hover:bg-accent hover:text-paper md:py-2";
 
   return (
     <div className="relative">
-      <button onClick={() => setOpen("main")} aria-label="More options" className="grid size-8 place-items-center text-white/60 hover:text-white">
+      <button onClick={() => setOpen("main")} aria-label="More options" className="grid size-8 place-items-center text-ink/60 hover:text-ink">
         <Icon name="more" />
       </button>
       {open && (
         <>
           <button aria-label="Close menu" className="fixed inset-0 z-50 cursor-default bg-black/40 md:bg-transparent" onClick={close} />
-          <div className="fixed inset-x-3 bottom-3 z-50 overflow-hidden rounded-2xl border border-white/10 bg-[#2c2c2e]/95 py-1 text-[15px] shadow-2xl backdrop-blur-xl md:absolute md:inset-x-auto md:bottom-auto md:right-0 md:top-9 md:w-56 md:rounded-xl md:text-sm">
-            <div className="flex items-center gap-3 border-b border-white/10 px-4 py-3 md:hidden">
+          <div className="brut fixed inset-x-3 bottom-3 z-50 overflow-hidden rounded-2xl bg-card py-1 text-[15px] md:absolute md:inset-x-auto md:bottom-auto md:right-0 md:top-9 md:w-56 md:rounded-xl md:text-sm">
+            <div className="flex items-center gap-3 border-b border-ink/10 px-4 py-3 md:hidden">
               <img src={track.art} alt="" className="size-10 rounded" />
               <span className="min-w-0">
                 <span className="block truncate font-medium">{track.title}</span>
-                <span className="block truncate text-sm text-white/50">{track.artist}</span>
+                <span className="block truncate text-sm text-ink/50">{track.artist}</span>
               </span>
             </div>
             {open === "main" ? (
@@ -45,7 +45,7 @@ export function TrackMenu({ track, onRemove }: { track: Track; onRemove?: () => 
                   Add to Playlist <Icon name="right" className="ml-auto size-4" />
                 </button>
                 {onRemove && <button className={item} onClick={act(onRemove)}>Remove from Playlist</button>}
-                <div className="my-1 border-t border-white/10" />
+                <div className="my-1 border-t border-ink/10" />
                 <Link className={item} href={`/album?id=${track.albumId}`} onClick={close}>Go to Album</Link>
                 <Link className={item} href={`/artist?id=${track.artistId}`} onClick={close}>Go to Artist</Link>
               </>
@@ -93,36 +93,36 @@ export function TrackRow({
 
   return (
     <div
-      className={`group grid items-center gap-3 rounded-md px-2 py-1.5 odd:bg-white/[0.03] hover:bg-white/[0.08] ${album ? "grid-cols-[2rem_1fr_3rem_2rem]" : "grid-cols-[1fr_3rem_2rem] lg:grid-cols-[1fr_1fr_3rem_2rem]"}`}
+      className={`group grid items-center gap-3 rounded-lg border-b-2 border-dashed border-ink/12 px-2 py-2 hover:bg-ink/[0.05] ${album ? "grid-cols-[2rem_1fr_3rem_2rem]" : "grid-cols-[1fr_3rem_2rem] lg:grid-cols-[1fr_1fr_3rem_2rem]"}`}
     >
       {album && (
-        <button onClick={onPlay} aria-label={`Play ${track.title}`} className="grid place-items-center text-sm tabular-nums text-white/50">
+        <button onClick={onPlay} aria-label={`Play ${track.title}`} className="grid place-items-center font-mono text-xs tabular-nums text-ink/45">
           {current ? (
             <Icon name={playing ? "volume" : "play"} className="size-4 text-[var(--accent)]" />
           ) : (
             <>
-              <span className="group-hover:hidden">{n}</span>
-              <Icon name="play" className="hidden size-4 text-white group-hover:block" />
+              <span className="group-hover:hidden">{String(n).padStart(2, "0")}</span>
+              <Icon name="play" className="hidden size-4 text-ink group-hover:block" />
             </>
           )}
         </button>
       )}
       <button onClick={onPlay} className="flex min-w-0 items-center gap-3 text-left">
-        {!album && <img src={track.art.replace("600x600", "100x100")} alt="" loading="lazy" className="size-10 shrink-0 rounded bg-white/5" />}
+        {!album && <img src={track.art.replace("600x600", "100x100")} alt="" loading="lazy" className="size-11 shrink-0 rounded-lg border-2 border-[var(--line)] bg-ink/5" />}
         <span className="min-w-0">
-          <span className={`block truncate text-[15px] ${current ? "text-[var(--accent)]" : ""}`}>
+          <span className={`block truncate text-[15px] font-medium ${current ? "text-accent" : ""}`}>
             {track.title}
             {track.explicit && <Explicit />}
           </span>
-          {(!album || track.artist) && <span className="block truncate text-[13px] text-white/50">{track.artist}</span>}
+          {(!album || track.artist) && <span className="block truncate text-[13px] text-ink/50">{track.artist}</span>}
         </span>
       </button>
       {!album && (
-        <Link href={`/album?id=${track.albumId}`} className="hidden truncate text-[13px] text-white/50 hover:underline lg:block">
+        <Link href={`/album?id=${track.albumId}`} className="hidden truncate text-[13px] text-ink/50 hover:underline lg:block">
           {track.album}
         </Link>
       )}
-      <span className="text-right text-[13px] tabular-nums text-white/50">{fmt(track.duration)}</span>
+      <span className="text-right font-mono text-xs tabular-nums text-ink/50">{fmt(track.duration)}</span>
       <TrackMenu track={track} onRemove={onRemove} />
     </div>
   );

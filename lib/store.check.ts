@@ -46,3 +46,15 @@ p().playList([t("a"), t("b"), t("c")], -1, false); // Play button
 assert.equal(ids(), "abc");
 assert.equal(p().index, 0);
 console.log("shuffle/play buttons ok");
+
+p().playList([t("a"), t("b")], 0);
+p().setSleep("track");
+p().next(true); // song ended with "end of song" timer → stop, don't advance
+assert.equal(p().playing, false);
+assert.equal(p().index, 0);
+assert.equal(p().sleepAfterTrack, false);
+p().setSleep(30);
+assert.ok(p().sleepAt! > Date.now() + 29 * 60_000);
+p().setSleep(null);
+assert.equal(p().sleepAt, null);
+console.log("sleep timer ok");

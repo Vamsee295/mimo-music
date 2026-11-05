@@ -1,5 +1,6 @@
 "use client";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { testKey } from "@/lib/youtube";
 import { useLibrary } from "@/lib/library";
 import { usePlayer } from "@/lib/store";
 import { PageHeader } from "@/components/ui";
@@ -19,13 +20,13 @@ const COUNTRIES = [
   ["ae", "UAE"],
 ] as const;
 
-const ACCENTS = ["#fa2d48", "#ff9f0a", "#30d158", "#0a84ff", "#ff375f", "#ffd60a", "#ac8e68"];
+const ACCENTS = ["#c8603a", "#2f6f6a", "#d9a21b", "#3c5fb0", "#b8325e", "#191614", "#fa2d48"];
 
-function Group({ title, children }: { title: string; children: ReactNode }) {
+function Group({ title, id, children }: { title: string; id?: string; children: ReactNode }) {
   return (
-    <section className="mb-8">
-      <h2 className="mb-2 px-4 text-xs font-semibold uppercase tracking-wide text-white/40">{title}</h2>
-      <div className="divide-y divide-white/[0.08] overflow-hidden rounded-xl bg-[#1c1c1e]">{children}</div>
+    <section id={id} className="mb-8 scroll-mt-6">
+      <h2 className="eyebrow mb-2.5 px-1">{title}</h2>
+      <div className="brut divide-y-2 divide-dashed divide-ink/12 overflow-hidden rounded-2xl bg-card">{children}</div>
     </section>
   );
 }
@@ -35,7 +36,7 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
     <div className="flex min-h-12 items-center justify-between gap-4 px-4 py-2.5">
       <div>
         <p className="text-[15px]">{label}</p>
-        {hint && <p className="text-xs text-white/40">{hint}</p>}
+        {hint && <p className="text-xs text-ink/40">{hint}</p>}
       </div>
       {children}
     </div>
@@ -49,9 +50,9 @@ function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) =
       aria-checked={on}
       aria-label={label}
       onClick={() => onChange(!on)}
-      className={`relative h-[31px] w-[51px] shrink-0 rounded-full transition ${on ? "bg-[#30d158]" : "bg-white/20"}`}
+      className={`relative h-[31px] w-[51px] shrink-0 rounded-full border-2 border-[var(--ink)] transition ${on ? "bg-accent" : "bg-ink/10"}`}
     >
-      <span className={`absolute top-0.5 size-[27px] rounded-full bg-white shadow transition-all ${on ? "left-[22px]" : "left-0.5"}`} />
+      <span className={`absolute top-[1px] size-[25px] rounded-full border-2 border-[var(--ink)] bg-paper transition-all ${on ? "left-[21px]" : "left-[1px]"}`} />
     </button>
   );
 }
@@ -62,17 +63,17 @@ export default function SettingsPage() {
 
   return (
     <div className="max-w-2xl">
-      <PageHeader title="Settings" />
+      <PageHeader title="Settings" eyebrow="Make it yours" />
 
       <Group title="Music">
         <Row label="Country / Region" hint="Charts, new music and search results">
           <select
             value={settings.country}
             onChange={(e) => setSettings({ country: e.target.value })}
-            className="rounded-lg bg-white/10 px-3 py-1.5 text-sm outline-none"
+            className="rounded-lg border-2 border-[var(--line)] bg-paper px-3 py-1.5 text-sm outline-none"
           >
             {COUNTRIES.map(([c, n]) => (
-              <option key={c} value={c} className="bg-[#1c1c1e]">
+              <option key={c} value={c} className="bg-card">
                 {n}
               </option>
             ))}
@@ -83,32 +84,28 @@ export default function SettingsPage() {
         </Row>
       </Group>
 
-      <Group title="Full Songs (YouTube)">
+      <Group title="Full Songs (YouTube)" id="full-songs">
         <Row label="Play Full Songs" hint="Uses YouTube's official player. The video stays on screen while it plays, and music stops when the app is in the background.">
           <Toggle label="Play full songs" on={settings.fullSongs} onChange={(fullSongs) => setSettings({ fullSongs })} />
         </Row>
-        <div className="px-4 py-3">
-          <label htmlFor="ytkey" className="text-[15px]">
-            YouTube Data API key
-          </label>
-          <p className="mb-2 text-xs text-white/40">
-            Free from Google Cloud Console → enable &quot;YouTube Data API v3&quot; → Credentials → API key. Stays on this device. About 100 new songs a day;
-            songs you&apos;ve played before don&apos;t count again.
-          </p>
-          <input
-            id="ytkey"
-            type="password"
-            autoComplete="off"
-            spellCheck={false}
-            value={settings.ytKey}
-            onChange={(e) => setSettings({ ytKey: e.target.value.trim() })}
-            placeholder={process.env.NEXT_PUBLIC_YT_KEY ? "Using the app's built-in key" : "Paste your key"}
-            className="w-full rounded-lg bg-white/10 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[var(--accent)]"
-          />
-        </div>
+        <KeySetup />
       </Group>
 
       <Group title="Appearance">
+        <Row label="Theme" hint="Editorial is the cream paper look; Dark is easier at night">
+          <div className="flex overflow-hidden rounded-lg border-2 border-line">
+            {(["editorial", "dark"] as const).map((t) => (
+              <button
+                key={t}
+                aria-pressed={settings.theme === t}
+                onClick={() => setSettings({ theme: t })}
+                className={`label-cond px-3 py-1 text-sm ${settings.theme === t ? "bg-ink text-paper" : "text-ink/60 hover:text-ink"}`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        </Row>
         <Row label="Accent Colour">
           <div className="flex gap-2">
             {ACCENTS.map((c) => (
@@ -117,7 +114,7 @@ export default function SettingsPage() {
                 aria-label={`Accent ${c}`}
                 aria-pressed={settings.accent === c}
                 onClick={() => setSettings({ accent: c })}
-                className={`size-7 rounded-full transition ${settings.accent === c ? "ring-2 ring-white ring-offset-2 ring-offset-[#1c1c1e]" : ""}`}
+                className={`size-7 rounded-full transition ${settings.accent === c ? "ring-2 ring-ink ring-offset-2 ring-offset-card" : ""}`}
                 style={{ background: c }}
               />
             ))}
@@ -148,12 +145,90 @@ export default function SettingsPage() {
 
       <Group title="About">
         <Row label="Mimo" hint="Free music app">
-          <span className="text-sm text-white/40">v0.2.0</span>
+          <span className="text-sm text-ink/40">v0.2.0</span>
         </Row>
         <Row label="Music catalog" hint="Apple iTunes public API · previews, full songs via YouTube">
           <span />
         </Row>
       </Group>
+    </div>
+  );
+}
+
+const STEPS = [
+  ["Open Google Cloud Console and sign in", "https://console.cloud.google.com/projectcreate"],
+  ["Enable “YouTube Data API v3”", "https://console.cloud.google.com/apis/library/youtube.googleapis.com"],
+  ["Credentials → Create credentials → API key, then copy it", "https://console.cloud.google.com/apis/credentials"],
+] as const;
+
+/** Step-by-step key setup with a live test, so "previews only" is never a mystery. */
+function KeySetup() {
+  const key = useLibrary((s) => s.settings.ytKey);
+  const setSettings = useLibrary((s) => s.setSettings);
+  const builtIn = !!process.env.NEXT_PUBLIC_YT_KEY;
+  const [status, setStatus] = useState<{ kind: "idle" | "testing" | "ok" | "bad"; text?: string }>({ kind: "idle" });
+  const active = key || builtIn;
+
+  const test = async () => {
+    setStatus({ kind: "testing" });
+    const r = await testKey(key || process.env.NEXT_PUBLIC_YT_KEY || "");
+    setStatus(r.ok ? { kind: "ok", text: `Working: found “${r.title}”. Full songs are on.` } : { kind: "bad", text: r.message });
+  };
+
+  return (
+    <div className="space-y-4 px-4 py-4">
+      <div className={`flex items-center gap-2 text-sm font-medium ${active ? "text-note" : "text-accent"}`}>
+        <span className={`size-2 rounded-full ${active ? "bg-note" : "bg-accent"}`} />
+        {active ? "Key added: songs play in full" : "No key yet: songs play as 30-second previews"}
+      </div>
+
+      {!key && (
+        <ol className="space-y-2.5">
+          {STEPS.map(([label, href], i) => (
+            <li key={href} className="flex items-start gap-3 text-sm">
+              <span className="grid size-6 shrink-0 place-items-center rounded-full bg-ink/10 text-xs font-semibold">{i + 1}</span>
+              <a href={href} target="_blank" rel="noreferrer" className="pt-0.5 text-ink/80 underline decoration-ink/20 underline-offset-4 hover:text-ink hover:decoration-ink">
+                {label} ↗
+              </a>
+            </li>
+          ))}
+          <li className="flex items-start gap-3 text-sm">
+            <span className="grid size-6 shrink-0 place-items-center rounded-full bg-ink/10 text-xs font-semibold">4</span>
+            <span className="pt-0.5 text-ink/80">Paste the key below and press Test</span>
+          </li>
+        </ol>
+      )}
+
+      <div>
+        <label htmlFor="ytkey" className="mb-1.5 block text-[15px]">
+          YouTube Data API key
+        </label>
+        <div className="flex gap-2">
+          <input
+            id="ytkey"
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            value={key}
+            onChange={(e) => {
+              setSettings({ ytKey: e.target.value.trim() });
+              setStatus({ kind: "idle" });
+            }}
+            placeholder={builtIn ? "Using the app's built-in key" : "AIza…"}
+            className="min-w-0 flex-1 rounded-xl border-2 border-[var(--line)] bg-paper px-3 py-2 font-mono text-sm outline-none focus:border-accent"
+          />
+          <button
+            onClick={test}
+            disabled={!active || status.kind === "testing"}
+            className="brut brut-press label-cond rounded-xl bg-accent px-4 text-[16px] text-paper disabled:opacity-40"
+          >
+            {status.kind === "testing" ? "Testing…" : "Test"}
+          </button>
+        </div>
+        <p role="status" aria-live="polite" className={`mt-2 text-xs ${status.kind === "ok" ? "text-note" : status.kind === "bad" ? "text-accent" : "text-ink/40"}`}>
+          {status.text ?? "Free. Stays on this device. About 100 new songs a day; songs you've played before don't count again."}
+        </p>
+      </div>
     </div>
   );
 }

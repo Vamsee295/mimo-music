@@ -26,6 +26,8 @@ type State = {
   shuffle: boolean;
   repeat: Repeat;
   volume: number;
+  sleepAt: number | null; // epoch ms when playback pauses (sleep timer)
+  sleepAfterTrack: boolean; // pause when the current song ends
 };
 
 type Actions = {
@@ -42,6 +44,7 @@ type Actions = {
   toggleShuffle: () => void;
   cycleRepeat: () => void;
   setVolume: (v: number) => void;
+  setSleep: (s: number | "track" | null) => void; // minutes, end of song, or off
 };
 
 const shuffled = <T,>(a: T[]) => {
@@ -62,6 +65,8 @@ export const usePlayer = create<State & Actions>()(
       shuffle: false,
       repeat: "off",
       volume: 0.8,
+      sleepAt: null,
+      sleepAfterTrack: false,
 
       playList: (tracks, start, shuffle) => {
         if (!tracks.length) return;
@@ -112,7 +117,8 @@ export const usePlayer = create<State & Actions>()(
       },
 
       next: (auto = false) => {
-        const { queue, index, repeat } = get();
+        const { queue, index, repeat, sleepAfterTrack } = get();
+        if (auto && sleepAfterTrack) return set({ playing: false, sleepAfterTrack: false });
         if (index < queue.length - 1) return set({ index: index + 1, playing: true });
         if (repeat === "all" || !auto) return set({ index: 0, playing: auto ? true : get().playing });
         set({ playing: false });
@@ -135,11 +141,14 @@ export const usePlayer = create<State & Actions>()(
         set((s) => ({ repeat: s.repeat === "off" ? "all" : s.repeat === "all" ? "one" : "off" })),
 
       setVolume: (volume) => set({ volume }),
+
+      setSleep: (v) =>
+        set({ sleepAt: typeof v === "number" ? Date.now() + v * 60_000 : null, sleepAfterTrack: v === "track" }),
     }),
     {
       name: "player",
       skipHydration: true,
-      partialize: (st) => ({ ...st, playing: false }),
+      partialize: (st) => ({ ...st, playing: false, sleepAt: null, sleepAfterTrack: false }),
     },
   ),
 );

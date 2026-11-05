@@ -1,18 +1,59 @@
 @import "tailwindcss";
 
-:root {
-  --accent: #fa2d48;
+/* ── Theme tokens ────────────────────────────────────────────────
+   Editorial (default) matches vamsee.tech: cream paper, ink outlines,
+   hard offset shadows, rust accent. `.theme-dark` is the night theme and
+   is also used as a local "dark island" over photos (Now Playing, tiles). */
+:root,
+.theme-editorial {
+  --paper: #f5efe6;
+  --card: #fbf8f2;
+  --card-2: #efe7da;
+  --ink: #191614;
+  --note: #2f6f6a;
+  --line: #191614; /* outline colour */
+  --hard: #191614; /* offset-shadow colour */
+  --dots: rgb(25 22 20 / 0.09);
+  color-scheme: light;
+}
+.theme-dark {
+  --paper: #121110;
+  --card: #1c1a18;
+  --card-2: #26231f;
+  --ink: #f5efe6;
+  --note: #7fc4bc;
+  --line: rgb(245 239 230 / 0.22);
+  --hard: #000;
+  --dots: rgb(245 239 230 / 0.05);
   color-scheme: dark;
+}
+:root {
+  --accent: #c8603a;
+  --sb: 240px; /* sidebar width, updated by <Boot> */
 }
 
 @theme inline {
-  --font-sans: var(--font-geist-sans);
+  --color-paper: var(--paper);
+  --color-card: var(--card);
+  --color-card-2: var(--card-2);
+  --color-ink: var(--ink);
+  --color-note: var(--note);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-display: var(--font-anton), Impact, sans-serif;
+  --font-cond: var(--font-barlow), var(--font-inter), sans-serif;
+  --font-hand: var(--font-caveat), cursive;
+  --font-mono: var(--font-mono-jb), ui-monospace, monospace;
 }
 
 body {
-  background: #111113;
-  color: #f5f5f7;
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  background-color: var(--paper);
+  /* dotted grid paper */
+  background-image: radial-gradient(var(--dots) 1.1px, transparent 1.5px);
+  background-size: 22px 22px;
+  color: var(--ink);
+  font-family: var(--font-sans);
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
 }
@@ -23,6 +64,10 @@ a {
   user-select: none;
 }
 
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--ink) 25%, transparent) transparent;
+}
 .no-scrollbar {
   scrollbar-width: none;
 }
@@ -30,20 +75,101 @@ a {
   display: none;
 }
 
+/* ── Editorial primitives ─────────────────────────────────────── */
+
+/* outlined card with a hard offset shadow; lifts on hover */
+.brut {
+  border: 2.4px solid var(--line);
+  box-shadow: 4px 5px 0 var(--hard);
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
+}
+.brut-hover:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 7px 0 var(--hard);
+}
+.brut-hover:active,
+.brut-press:active {
+  transform: translate(3px, 4px);
+  box-shadow: 1px 1px 0 var(--hard);
+}
+
+/* condensed uppercase button text (Barlow Condensed 700) */
+.label-cond {
+  font-family: var(--font-cond);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* big Anton headline */
+.display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+  line-height: 0.95;
+}
+
+/* the rust word-block behind a headline word */
+.hl {
+  display: inline-block;
+  background: var(--accent);
+  color: var(--paper);
+  border-radius: 8px;
+  padding: 0.02em 0.16em 0;
+  transform: rotate(-1.5deg);
+}
+
+/* handwritten margin note */
+.note {
+  font-family: var(--font-hand);
+  color: var(--note);
+  font-size: 1.35rem;
+  line-height: 1.2;
+}
+
+/* mono section index: "01 / TOP SONGS" */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* auto-numbered sections: 01 / 02 / … per page */
+main {
+  counter-reset: sec;
+}
+.sec {
+  counter-increment: sec;
+}
+.sec-n::before {
+  content: counter(sec, decimal-leading-zero) " /";
+  margin-right: 0.5em;
+}
+
 /* slim filled range slider for seek + volume */
 .range {
   appearance: none;
   height: 4px;
   border-radius: 999px;
-  background: linear-gradient(to right, rgb(255 255 255 / 0.85) var(--p), rgb(255 255 255 / 0.2) var(--p));
+  background: linear-gradient(
+    to right,
+    var(--accent) var(--p),
+    color-mix(in oklab, var(--ink) 18%, transparent) var(--p)
+  );
   cursor: pointer;
 }
 .range::-webkit-slider-thumb {
   appearance: none;
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--paper);
+  border: 2px solid var(--ink);
   opacity: 0;
 }
 .range:hover::-webkit-slider-thumb,
@@ -61,13 +187,15 @@ a {
   }
 }
 
-/* 3D cover flow */
-.coverflow {
-  perspective: 1200px;
+/* caption swap on the category tiles */
+.fade-in {
+  animation: fade-in 0.6s ease;
 }
-.coverflow-item {
-  transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.6s, filter 0.6s;
-  -webkit-box-reflect: below 2px linear-gradient(transparent 70%, rgb(0 0 0 / 0.25));
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
 }
 
 .reduce-motion *,

@@ -1,11 +1,16 @@
 import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
-import { Geist } from "next/font/google";
+import { Anton, Barlow_Condensed, Caveat, Inter, JetBrains_Mono } from "next/font/google";
 import { PlayerBar } from "@/components/PlayerBar";
 import { Boot, Sidebar, TabBar } from "@/components/Nav";
 import "./globals.css";
 
-const geist = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
+const inter = Inter({ variable: "--font-inter", subsets: ["latin"] });
+const anton = Anton({ variable: "--font-anton", subsets: ["latin"], weight: "400" });
+const barlow = Barlow_Condensed({ variable: "--font-barlow", subsets: ["latin"], weight: ["600", "700"] });
+const caveat = Caveat({ variable: "--font-caveat", subsets: ["latin"] });
+const mono = JetBrains_Mono({ variable: "--font-mono-jb", subsets: ["latin"] });
+const fonts = [inter, anton, barlow, caveat, mono].map((f) => f.variable).join(" ");
 
 export const metadata: Metadata = {
   title: "Mimo",
@@ -13,13 +18,13 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#000000",
+  themeColor: "#f5efe6",
   viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${geist.variable} h-full antialiased`}>
+    <html lang="en" className={`${fonts} theme-editorial h-full antialiased`}>
       <body className="flex h-full">
         <Boot />
         <Suspense>

@@ -22,16 +22,16 @@ export default function AlbumPage() {
   return (
     <>
       <div className="mb-8 flex flex-col items-center gap-6 text-center md:flex-row md:items-end md:text-left">
-        <img src={album.art} alt="" className="aspect-square w-64 rounded-xl object-cover shadow-[0_20px_60px_rgba(0,0,0,0.5)] md:w-72" />
+        <img src={album.art} alt="" className="brut aspect-square w-64 -rotate-2 rounded-2xl object-cover md:w-72" />
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
+          <h1 className="display text-[38px] md:text-[56px]">
             {album.title}
             {album.explicit && <Explicit />}
           </h1>
-          <Link href={`/artist?id=${album.artistId}`} className="text-xl text-[var(--accent)] hover:underline md:text-2xl">
+          <Link href={`/artist?id=${album.artistId}`} className="label-cond mt-2 inline-block text-[22px] text-accent hover:underline">
             {album.artist}
           </Link>
-          <p className="mt-1 text-xs font-semibold uppercase text-white/50">
+          <p className="eyebrow mt-1 !text-ink/55">
             {album.genre} · {album.year}
           </p>
           <div className="mt-5 flex items-center justify-center gap-3 md:justify-start">
@@ -39,7 +39,7 @@ export default function AlbumPage() {
             <button
               onClick={() => useLibrary.getState().toggleAlbum(album)}
               aria-label={saved ? "Remove from Library" : "Add to Library"}
-              className="grid size-9 place-items-center rounded-full bg-white/10 text-[var(--accent)] hover:bg-white/20"
+              className="brut brut-hover grid size-11 place-items-center rounded-xl bg-card text-accent"
             >
               <Icon name={saved ? "check" : "plus"} />
             </button>
@@ -48,7 +48,7 @@ export default function AlbumPage() {
       </div>
 
       <TrackList tracks={tracks} album />
-      <p className="mb-10 mt-4 text-[13px] text-white/50">
+      <p className="mb-12 mt-5 font-mono text-xs leading-relaxed text-ink/50">
         {album.year && <>Released {album.year}<br /></>}
         {tracks.length} songs, {minutes} minutes
         <br />

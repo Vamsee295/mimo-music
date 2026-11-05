@@ -9,11 +9,10 @@ export default function GenrePage() {
   const id = Number(useSearchParams().get("id") ?? 0);
   const genre = GENRES.find((g) => g.id === id);
   const songs = useData(`genre-songs:${id}`, () => topSongs(id || undefined, 50));
-  const title = genre ? genre.name : "Top Songs";
 
   return (
     <>
-      <PageHeader title={title}>
+      <PageHeader title="Top" hl={genre ? genre.name : "Songs"} eyebrow="Chart · updated daily">
         <PlayShuffle tracks={songs.data ?? []} />
       </PageHeader>
       <Section title={`Top 50 ${genre ? genre.name : ""} Songs`}>
