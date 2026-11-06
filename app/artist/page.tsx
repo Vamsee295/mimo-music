@@ -26,7 +26,7 @@ export default function ArtistPage() {
         <div className="absolute inset-x-4 bottom-6 flex flex-wrap items-end justify-between gap-4 md:inset-x-8">
           <div>
             <p className="eyebrow mb-2">{artist.genre} · artist</p>
-            <h1 className="display text-[52px] md:text-[96px]"><span className="hl">{artist.name}</span></h1>
+            <h1 className="display break-words text-[clamp(34px,11vw,52px)] md:text-[96px]"><span className="hl">{artist.name}</span></h1>
           </div>
           <PlayShuffle tracks={songs} />
         </div>

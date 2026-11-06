@@ -153,16 +153,24 @@ main {
 }
 
 /* slim filled range slider for seek + volume */
+/* looks 4px thin, but the touch area is 24px tall (a 4px strip is nearly impossible to grab on a phone) */
 .range {
   appearance: none;
-  height: 4px;
-  border-radius: 999px;
+  height: 24px;
   background: linear-gradient(
-    to right,
-    var(--accent) var(--p),
-    color-mix(in oklab, var(--ink) 18%, transparent) var(--p)
-  );
+      to right,
+      var(--accent) var(--p),
+      color-mix(in oklab, var(--ink) 18%, transparent) var(--p)
+    )
+    center / 100% 4px no-repeat;
   cursor: pointer;
+  touch-action: none; /* dragging the slider shouldn't scroll the page */
+}
+/* phones have no hover: always show the knob so it's clear the bar can be dragged */
+@media (hover: none) {
+  .range::-webkit-slider-thumb {
+    opacity: 1 !important;
+  }
 }
 .range::-webkit-slider-thumb {
   appearance: none;
@@ -289,7 +297,7 @@ main {
 
 /* menus, sheets and dialogs grow in from where you tapped instead of popping */
 .pop-in {
-  animation: pop-in 220ms cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
+  animation: pop-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
   transform-origin: top right;
 }
 @keyframes pop-in {
@@ -310,7 +318,7 @@ main {
   }
 }
 dialog.ask[open] {
-  animation: pop-in 240ms cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
+  animation: pop-in 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
   transform-origin: center;
 }
 dialog.ask[open]::backdrop {
@@ -325,4 +333,26 @@ dialog.ask[open]::backdrop {
   :where(button, a, [role="button"]):not(:disabled, .fixed, [aria-label^="Close"]):active {
     scale: 0.96;
   }
+}
+
+/* ── phone comfort ── */
+/* iOS zooms the whole page into any text field under 16px; keep fields at 16px on phones */
+@media (max-width: 767px) {
+  input:not([type="range"], [type="checkbox"], [type="radio"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+/* small icon buttons keep their look but get a ~44px invisible touch area (Apple's minimum) */
+.tap {
+  position: relative;
+}
+.tap::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+}
+.tap-lg::after {
+  inset: -14px;
 }

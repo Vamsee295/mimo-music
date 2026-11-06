@@ -40,7 +40,7 @@ export default function SearchPage() {
           className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-ink/40"
         />
         {q && (
-          <button onClick={() => setQ("")} aria-label="Clear search" className="text-ink/50">
+          <button onClick={() => setQ("")} aria-label="Clear search" className="tap tap-lg text-ink/50">
             <Icon name="close" className="size-4" />
           </button>
         )}

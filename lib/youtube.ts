@@ -52,6 +52,35 @@ export const forgetVideo = (trackId: string) => {
 
 export class QuotaError extends Error {}
 
+/** Google API keys: "AIza" + 35 letters/digits/-/_ (39 total). */
+export const looksLikeKey = (k: string) => /^AIza[0-9A-Za-z_-]{35}$/.test(k);
+/** Pasted keys often carry spaces, line breaks, quotes or invisible characters (copied from a chat or
+ *  a PDF). Strip them, and if a key is buried in a longer paste ("key: AIza…"), pull it out. */
+export const cleanKey = (raw: string) => {
+  const s = raw.replace(/[^!-~]|["'`]/g, ""); // keys are plain ASCII: drop spaces, quotes, invisible chars
+  return s.match(/AIza[0-9A-Za-z_-]{35}/)?.[0] ?? s;
+};
+
+type GoogleError = { message?: string; errors?: { reason?: string }[]; details?: { reason?: string }[] };
+
+/** Google's error → what the user should actually do. Most "it works on my laptop but not on the
+ *  website" cases are a key restricted to other websites (HTTP referrers) in Google Cloud. */
+export function explain(e: GoogleError | undefined, status: number): string {
+  const why = [...(e?.details ?? []), ...(e?.errors ?? [])].map((x) => x.reason ?? "").join(" ") + " " + (e?.message ?? "");
+  const site = typeof location !== "undefined" ? location.origin : "this website";
+  if (/REFERRER_BLOCKED|referer/i.test(why))
+    return `Your key is locked to other websites. In Google Cloud → Credentials → your key → Website restrictions, add ${site}/* (or choose "None"), save, wait a minute, then Test again.`;
+  if (/ANDROID_APP_BLOCKED|IOS_APP_BLOCKED|IP_ADDRESS_BLOCKED/i.test(why))
+    return "Your key is restricted to apps or IP addresses. In Google Cloud → Credentials → your key, set Application restrictions to “Websites” (with this site) or “None”.";
+  if (/SERVICE_BLOCKED|API_KEY_SERVICE_BLOCKED/i.test(why))
+    return "Your key isn't allowed to use YouTube. In Google Cloud → Credentials → your key → API restrictions, add “YouTube Data API v3”.";
+  if (/API_KEY_INVALID|keyInvalid|badRequest/i.test(why)) return "That key isn't valid. Copy it again from Credentials.";
+  if (/accessNotConfigured|SERVICE_DISABLED|not been used|disabled/i.test(why))
+    return "YouTube Data API v3 isn't enabled for this key's project yet (step 2). If you just enabled it, wait a minute.";
+  if (/quotaExceeded|dailyLimitExceeded|RATE_LIMIT/i.test(why)) return "Today's free quota is used up. It resets at midnight Pacific time.";
+  return e?.message ?? `YouTube API error ${status}`;
+}
+
 /** "PT4M24S" → 264 */
 export const isoSeconds = (iso = "") => {
   const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
@@ -88,9 +117,8 @@ export async function findVideo(t: Track, key: string): Promise<string | null> {
   const k = `&key=${encodeURIComponent(key)}`;
   const call = async <T,>(url: string): Promise<T> => {
     const r = await fetch(url);
-    const j = (await r.json().catch(() => ({}))) as T & { error?: { message?: string } };
-    // surface Google's own words ("API key not valid", "quota exceeded", "referer blocked"…)
-    if (r.status === 403 || r.status === 400) throw new QuotaError(j.error?.message ?? `YouTube API ${r.status}`);
+    const j = (await r.json().catch(() => ({}))) as T & { error?: GoogleError };
+    if (r.status === 403 || r.status === 400) throw new QuotaError(explain(j.error, r.status));
     if (!r.ok) throw new Error(j.error?.message ?? `YouTube API ${r.status}`);
     return j;
   };
@@ -123,17 +151,9 @@ export async function testKey(key: string): Promise<{ ok: true; title: string } 
       "https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=1&videoEmbeddable=true&q=Hukum%20Anirudh" +
         `&key=${encodeURIComponent(key)}`,
     );
-    const j = (await r.json()) as { items?: { snippet?: { title?: string } }[]; error?: { message?: string; errors?: { reason?: string }[] } };
+    const j = (await r.json()) as { items?: { snippet?: { title?: string } }[]; error?: GoogleError };
     if (r.ok) return { ok: true, title: j.items?.[0]?.snippet?.title ?? "a video" };
-    const reason = j.error?.errors?.[0]?.reason;
-    const message =
-      reason === "keyInvalid" || reason === "badRequest"
-        ? "That key isn't valid. Copy it again from Credentials."
-        : reason === "accessNotConfigured" || /not been used|disabled/i.test(j.error?.message ?? "")
-          ? "YouTube Data API v3 isn't enabled for this key's project yet (step 2). If you just enabled it, wait a minute."
-          : reason === "quotaExceeded"
-            ? "Today's free quota is used up. It resets at midnight Pacific time."
-            : (j.error?.message ?? `Error ${r.status}`);
+    const message = explain(j.error, r.status);
     return { ok: false, message };
   } catch {
     return { ok: false, message: "Couldn't reach YouTube. Check your connection." };

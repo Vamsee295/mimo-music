@@ -22,7 +22,7 @@ export function TrackMenu({ track, onRemove, removeLabel = "Remove from Playlist
 
   return (
     <div className="relative">
-      <button onClick={() => setOpen("main")} aria-label="More options" className="grid size-8 place-items-center text-ink/60 hover:text-ink">
+      <button onClick={() => setOpen("main")} aria-label="More options" className="tap grid size-8 place-items-center text-ink/60 hover:text-ink">
         <Icon name="more" />
       </button>
       {open && (
@@ -165,7 +165,7 @@ export function TrackRow({
         onClick={() => useLibrary.getState().toggleLike(track)}
         aria-label={liked ? `Unlike ${track.title}` : `Like ${track.title}`}
         aria-pressed={liked}
-        className={`grid size-8 place-items-center rounded-full transition active:scale-90 ${
+        className={`tap grid size-8 place-items-center rounded-full transition active:scale-90 ${
           liked ? "text-accent" : "text-ink/30 hover:text-ink md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
         }`}
       >

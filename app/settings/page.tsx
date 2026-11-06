@@ -1,6 +1,6 @@
 "use client";
 import { useState, type ReactNode } from "react";
-import { testKey } from "@/lib/youtube";
+import { cleanKey, looksLikeKey, testKey } from "@/lib/youtube";
 import { useLibrary } from "@/lib/library";
 import { usePlayer } from "@/lib/store";
 import { PageHeader } from "@/components/ui";
@@ -111,7 +111,7 @@ export default function SettingsPage() {
           </div>
         </Row>
         <Row label="Accent Colour">
-          <div className="flex gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             {ACCENTS.map((c) => (
               <button
                 key={c}
@@ -211,11 +211,24 @@ function KeySetup() {
   const setSettings = useLibrary((s) => s.setSettings);
   const builtIn = !!process.env.NEXT_PUBLIC_YT_KEY;
   const [status, setStatus] = useState<{ kind: "idle" | "testing" | "ok" | "bad"; text?: string }>({ kind: "idle" });
+  const [show, setShow] = useState(false);
   const active = key || builtIn;
 
   const test = async () => {
+    const k = cleanKey(key || process.env.NEXT_PUBLIC_YT_KEY || "");
+    // catch the common wrong pastes before asking Google (OAuth client ID, a saved password, half a key)
+    if (!looksLikeKey(k)) {
+      const what = /apps\.googleusercontent\.com/.test(k)
+        ? "That's an OAuth Client ID, not an API key."
+        : k.startsWith("GOCSPX")
+          ? "That's an OAuth client secret, not an API key."
+          : k.startsWith("AIza")
+            ? `That key is ${k.length} characters; a full key is 39. Part of it may be missing — copy it again.`
+            : "That isn't an API key (they start with “AIza” and are 39 characters). Tap Show to see what's in the box.";
+      return setStatus({ kind: "bad", text: `${what} In Google Cloud → Credentials, use the “API key” row's Show key → copy.` });
+    }
     setStatus({ kind: "testing" });
-    const r = await testKey(key || process.env.NEXT_PUBLIC_YT_KEY || "");
+    const r = await testKey(k);
     setStatus(r.ok ? { kind: "ok", text: `Working: found “${r.title}”. Full songs are on.` } : { kind: "bad", text: r.message });
   };
 
@@ -248,19 +261,31 @@ function KeySetup() {
           YouTube Data API key
         </label>
         <div className="flex gap-2">
+          {/* type="text" + CSS masking: a password field makes browsers auto-fill a saved password into it */}
           <input
             id="ytkey"
-            type="password"
+            type="text"
+            name="yt-api-key"
             autoComplete="off"
+            autoCapitalize="off"
+            autoCorrect="off"
+            data-1p-ignore
+            data-lpignore="true"
             spellCheck={false}
             value={key}
             onChange={(e) => {
-              setSettings({ ytKey: e.target.value.trim() });
+              setSettings({ ytKey: cleanKey(e.target.value) });
               setStatus({ kind: "idle" });
             }}
+            style={show ? undefined : ({ WebkitTextSecurity: "disc" } as React.CSSProperties)}
             placeholder={builtIn ? "Using the app's built-in key" : "AIza…"}
             className="min-w-0 flex-1 rounded-xl border-2 border-[var(--line)] bg-paper px-3 py-2 font-mono text-sm outline-none focus:border-accent"
           />
+          {key && (
+            <button type="button" onClick={() => setShow(!show)} className="label-cond rounded-xl border-2 border-[var(--line)] px-3 text-[15px] text-ink/70">
+              {show ? "Hide" : "Show"}
+            </button>
+          )}
           <button
             onClick={test}
             disabled={!active || status.kind === "testing"}

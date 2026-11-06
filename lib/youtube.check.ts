@@ -1,6 +1,6 @@
 // Run: npx tsx lib/youtube.check.ts
 import assert from "node:assert";
-import { isoSeconds, pickBest } from "./youtube";
+import { cleanKey, explain, isoSeconds, looksLikeKey, pickBest } from "./youtube";
 
 assert.equal(isoSeconds("PT4M24S"), 264);
 assert.equal(isoSeconds("PT1H2M3S"), 3723);
@@ -45,3 +45,22 @@ assert.equal(
   "lyric",
 );
 console.log("maari case ok");
+
+// Google errors → fix steps (real shapes from the API)
+assert.match(explain({ message: "Requests from referer https://mimo-music.vercel.app/ are blocked.", details: [{ reason: "API_KEY_HTTP_REFERRER_BLOCKED" }] }, 403), /Website restrictions/);
+assert.match(explain({ message: "API key not valid.", errors: [{ reason: "badRequest" }], details: [{ reason: "API_KEY_INVALID" }] }, 400), /isn't valid/);
+assert.match(explain({ details: [{ reason: "API_KEY_SERVICE_BLOCKED" }] }, 403), /API restrictions/);
+assert.match(explain({ errors: [{ reason: "quotaExceeded" }] }, 403), /quota/);
+console.log("key errors ok");
+
+// pasted keys get cleaned; wrong pastes are spotted before calling Google
+const K = "AIza" + "B".repeat(35);
+assert.equal(cleanKey(` ${K}
+`), K);
+assert.equal(cleanKey(`"${K}"`), K);
+assert.equal(cleanKey(String.fromCharCode(0x200b) + K + String.fromCharCode(0xfeff)), K);
+assert.equal(cleanKey(`API key: ${K}`), K);
+assert.ok(looksLikeKey(K));
+assert.ok(!looksLikeKey(K.slice(0, 30)));
+assert.ok(!looksLikeKey("123-abc.apps.googleusercontent.com"));
+console.log("key cleaning ok");

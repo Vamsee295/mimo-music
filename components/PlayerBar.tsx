@@ -310,7 +310,7 @@ export function PlayerBar() {
         ref={ytHost}
         className={`fixed overflow-hidden rounded-xl border-[2.4px] border-[var(--line)] bg-black shadow-[4px_5px_0_var(--hard)] [&>iframe]:size-full ${
           tucked ? "pointer-events-none -left-[9999px] top-0 size-[205px]" : panel === "full" ? "z-[60]" : "z-30"
-        } ${floating ? "bottom-[calc(8.5rem+env(safe-area-inset-bottom))] right-2 size-[205px] md:bottom-24 md:right-4" : ""}`}
+        } ${floating ? "bottom-[calc(9rem+env(safe-area-inset-bottom))] right-2 size-[205px] md:bottom-24 md:right-4" : ""}`}
       />
 
       {panel === "queue" && (
@@ -331,7 +331,7 @@ export function PlayerBar() {
       {cur && src?.key === curKey && src.why && !src.yt && !src.url && !onSettings && (
         <div
           role="status"
-          className="brut fixed inset-x-2 bottom-[calc(8.4rem+env(safe-area-inset-bottom))] z-30 flex items-center gap-3 rounded-2xl bg-accent px-4 py-2.5 text-[13px] font-medium text-paper md:bottom-[100px] md:left-[calc(var(--sb,240px)+1rem)] md:right-auto md:max-w-xl"
+          className="brut fixed inset-x-2 bottom-[calc(9rem+env(safe-area-inset-bottom))] z-30 flex items-center gap-3 rounded-2xl bg-accent px-4 py-2.5 text-[13px] font-medium text-paper md:bottom-[100px] md:left-[calc(var(--sb,240px)+1rem)] md:right-auto md:max-w-xl"
         >
           <Icon name="info" className="size-5 shrink-0" />
           <span className="min-w-0 flex-1">{src.why}</span>
@@ -382,9 +382,9 @@ export function PlayerBar() {
 
       {/* Phone: mini player above the tab bar */}
       {cur && (
-        <div className="fixed inset-x-2 bottom-[calc(3.6rem+env(safe-area-inset-bottom))] brut z-30 overflow-hidden rounded-2xl bg-card md:hidden">
+        <div className="fixed inset-x-2 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] brut z-30 overflow-hidden rounded-2xl bg-card md:hidden">
           <div className="flex items-center gap-3 p-2">
-            <button onClick={() => setPanel("full")} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+            <button onClick={() => setPanel("full")} aria-label="Open Now Playing" className="flex min-w-0 flex-1 items-center gap-3 text-left">
               <img src={cur.art} alt="" className="size-11 rounded-lg border-2 border-[var(--line)]" />
               <span className="min-w-0">
                 <span className="block truncate text-sm font-semibold">{cur.title}</span>
@@ -460,7 +460,7 @@ function Btn({ label, icon, onClick, on, size = "size-5" }: { label: string; ico
       aria-label={label}
       aria-pressed={on}
       // toggles (shuffle/repeat) show "on" as a filled ink circle — readable with any accent, in any theme
-      className={`grid place-items-center rounded-full transition active:scale-90 ${
+      className={`tap grid place-items-center rounded-full transition active:scale-90 ${
         on === undefined ? "text-ink/80 hover:text-ink" : on ? "size-8 bg-ink text-paper" : "size-8 text-ink/45 hover:text-ink"
       }`}
     >

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { appBooted, guardedStorage } from "./safeStorage";
+import { cleanKey } from "./youtube";
 
 let libLoaded = false; // flips once saved data has been read; blocks writes before that
 import type { Track } from "./store";
@@ -68,7 +69,7 @@ const initial: State = {
 
 const editPlaylist = (ps: Playlist[], id: string, fn: (p: Playlist) => Playlist) => ps.map((p) => (p.id === id ? fn(p) : p));
 
-export const ytKey = () => useLibrary.getState().settings.ytKey || process.env.NEXT_PUBLIC_YT_KEY || "";
+export const ytKey = () => cleanKey(useLibrary.getState().settings.ytKey || process.env.NEXT_PUBLIC_YT_KEY || ""); // cleanKey also repairs keys saved before cleaning existed
 
 export const useLibrary = create<State & Actions>()(
   persist(

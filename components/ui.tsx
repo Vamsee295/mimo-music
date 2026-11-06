@@ -41,7 +41,7 @@ export function PageHeader({
       </div>
       <div className="flex items-center gap-3">
         {children}
-        <Link href="/account" aria-label="Account" className="md:hidden">
+        <Link href="/account" aria-label="Account" className="tap md:hidden">
           <Avatar name={name} />
         </Link>
       </div>
