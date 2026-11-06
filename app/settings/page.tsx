@@ -87,9 +87,6 @@ export default function SettingsPage() {
       </Group>
 
       <Group title="Full Songs (YouTube)" id="full-songs">
-        <Row label="Data Saver" hint="Keeps the YouTube video small, so YouTube usually streams 144–240p and uses much less mobile data">
-          <Toggle label="Data saver" on={settings.dataSaver} onChange={(dataSaver) => setSettings({ dataSaver })} />
-        </Row>
         <KeySetup />
       </Group>
 

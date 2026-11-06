@@ -595,8 +595,6 @@ function NowPlaying({
   onClose: () => void;
 }) {
   const hasKey = useLibrary((s) => !!(s.settings.ytKey || process.env.NEXT_PUBLIC_YT_KEY));
-  // YouTube picks quality from player size: a ~300px player streams ~144–240p instead of 720p+
-  const dataSaver = useLibrary((s) => s.settings.dataSaver);
   const playing = usePlayer((s) => s.playing);
   const liked = useLibrary((s) => s.liked.some((t) => t.id === cur.id));
   const [tab, setTab] = useState<Tab>("lyrics");
@@ -636,23 +634,23 @@ function NowPlaying({
         <div className="grid min-h-0 flex-1 gap-8 md:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] md:gap-12">
           {/* left: artwork / video + controls */}
           <div className={`no-scrollbar flex min-h-0 flex-col justify-center gap-5 overflow-y-auto max-md:justify-start ${panelOpen ? "max-md:hidden" : ""}`}>
-            {mode === "yt" ? (
-              // the YouTube player is positioned over this slot by PlayerBar
-              <div ref={setSlot} className={`mx-auto aspect-video w-full rounded-2xl bg-black ${dataSaver ? "max-w-[300px]" : "max-w-xl"}`} />
-            ) : (
-              <div className="relative mx-auto w-full max-w-[min(100%,26rem,40vh)]">
-                <img
-                  src={cur.art}
-                  alt=""
-                  className={`aspect-square w-full rounded-2xl border-[2.4px] border-[var(--line)] object-cover shadow-[8px_10px_0_rgba(0,0,0,0.55)] transition-transform duration-500 ${playing ? "rotate-0 scale-100" : "-rotate-2 scale-[0.86]"}`}
-                />
-                {mode === "finding" && (
-                  <span className="label-cond absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border-2 border-[var(--line)] bg-black/70 px-3 py-1 text-[13px]">
-                    Finding full song…
-                  </span>
-                )}
-              </div>
-            )}
+            {/* Album art is the hero (Apple Music style). For YouTube songs, the official player sits as a
+                small picture-in-picture card on the art's corner: YouTube's terms need it visible and ≥200×200,
+                and at that size it also streams low-res video, so it barely uses data. */}
+            <div className={`relative mx-auto w-full max-w-[min(100%,26rem,40vh)] ${mode === "yt" ? "mb-6" : ""}`}>
+              <img
+                src={cur.art}
+                alt=""
+                className={`aspect-square w-full rounded-2xl border-[2.4px] border-[var(--line)] object-cover shadow-[8px_10px_0_rgba(0,0,0,0.55)] transition-transform duration-500 ${playing ? "rotate-0 scale-100" : "-rotate-2 scale-[0.86]"}`}
+              />
+              {mode === "finding" && (
+                <span className="label-cond absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border-2 border-[var(--line)] bg-black/70 px-3 py-1 text-[13px]">
+                  Finding full song…
+                </span>
+              )}
+              {/* PlayerBar glues the YouTube player onto this slot (205 = 200px video + its 2.4px border) */}
+              {mode === "yt" && <div ref={setSlot} className="absolute -bottom-6 -right-3 size-[205px] md:-right-10" />}
+            </div>
 
             <div className="mx-auto w-full max-w-xl">
               <div className="mb-4 flex items-end gap-3">
