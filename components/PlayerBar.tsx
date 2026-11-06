@@ -27,7 +27,6 @@ export function PlayerBar() {
   const [panel, setPanel] = useState<"none" | "queue" | "full">("none");
   // yt = YouTube video id · url = on-device song · neither = no full version → why + what to do (skip this song / stop)
   const [src, setSrc] = useState<{ key: string; yt: string | null; url?: string; why?: string; fail?: "skip" | "stop" }>();
-  const [slot, setSlot] = useState<HTMLElement | null>(null);
   // on Settings the banner would cover the key field it points to
   const onSettings = usePathname() === "/settings";
   const s = usePlayer();
@@ -171,26 +170,6 @@ export function PlayerBar() {
     return () => clearInterval(id);
   }, [mode]);
 
-  // keep the official player glued to its slot in Now Playing (YouTube requires it to stay visible)
-  useEffect(() => {
-    const host = ytHost.current;
-    if (!host || panel !== "full" || !slot) return;
-    let raf = 0;
-    const tick = () => {
-      let r = slot.getBoundingClientRect();
-      // slot hidden (phone queue view) → keep a visible corner card instead.
-      // 205 = YouTube's 200×200 minimum + the 2.4px border on each side
-      if (r.width < 205) r = new DOMRect(innerWidth - 213, innerHeight - 213, 205, 205);
-      Object.assign(host.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
-      raf = requestAnimationFrame(tick);
-    };
-    tick();
-    return () => {
-      cancelAnimationFrame(raf);
-      host.removeAttribute("style");
-    };
-  }, [panel, slot]);
-
   // sleep timer: pause when the chosen time is up
   useEffect(() => {
     if (!s.sleepAt) return;
@@ -292,9 +271,6 @@ export function PlayerBar() {
   const unavailable = src?.key === curKey && !src.yt && !src.url;
   const sk: Seek = unavailable ? { time: 0, dur: 0, seek } : { time, dur, seek };
   const toggle = () => cur && s.setPlaying(!s.playing);
-  // YouTube requires the player to be visible while it plays; when paused we tuck the corner card away
-  const floating = mode === "yt" && panel !== "full" && s.playing;
-  const tucked = mode !== "yt" || (panel !== "full" && !s.playing);
 
   return (
     <>
@@ -305,13 +281,10 @@ export function PlayerBar() {
         onEnded={onEnded}
       />
 
-      {/* Official YouTube player. Never hidden while a full song plays: big in Now Playing, a 200×200 card otherwise. */}
-      <div
-        ref={ytHost}
-        className={`fixed overflow-hidden rounded-xl border-[2.4px] border-[var(--line)] bg-black shadow-[4px_5px_0_var(--hard)] [&>iframe]:size-full ${
-          tucked ? "pointer-events-none -left-[9999px] top-0 size-[205px]" : panel === "full" ? "z-[60]" : "z-30"
-        } ${floating ? "bottom-[calc(9rem+env(safe-area-inset-bottom))] right-2 size-[205px] md:bottom-24 md:right-4" : ""}`}
-      />
+      {/* YouTube player, audio only for personal use: invisible and unclickable, but kept inside the
+          viewport (browsers may pause media in frames that are fully off-screen). 200px keeps the stream low-res.
+          Note: hiding the player goes against YouTube's API terms — fine for a private APK, not for a store. */}
+      <div ref={ytHost} aria-hidden className="pointer-events-none fixed left-0 top-0 -z-50 size-[200px] overflow-hidden opacity-0 [&>iframe]:size-full" />
 
       {panel === "queue" && (
         <aside className="fixed bottom-24 right-4 top-4 z-40 hidden w-96 flex-col brut rounded-2xl bg-card p-4 md:flex">
@@ -325,7 +298,7 @@ export function PlayerBar() {
         </aside>
       )}
 
-      {panel === "full" && cur && <NowPlaying cur={cur} sk={sk} prev={prev} mode={mode} why={src?.key === curKey ? src.why : undefined} setSlot={setSlot} onClose={() => setPanel("none")} />}
+      {panel === "full" && cur && <NowPlaying cur={cur} sk={sk} prev={prev} mode={mode} why={src?.key === curKey ? src.why : undefined} onClose={() => setPanel("none")} />}
 
       {/* why there's no full song (and what happens next) — visible without opening Now Playing */}
       {cur && src?.key === curKey && src.why && !src.yt && !src.url && !onSettings && (
@@ -583,7 +556,6 @@ function NowPlaying({
   prev,
   mode,
   why,
-  setSlot,
   onClose,
 }: {
   cur: Track;
@@ -591,7 +563,6 @@ function NowPlaying({
   prev: () => void;
   mode: Mode;
   why?: string;
-  setSlot: (el: HTMLElement | null) => void;
   onClose: () => void;
 }) {
   const hasKey = useLibrary((s) => !!(s.settings.ytKey || process.env.NEXT_PUBLIC_YT_KEY));
@@ -634,10 +605,8 @@ function NowPlaying({
         <div className="grid min-h-0 flex-1 gap-8 md:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] md:gap-12">
           {/* left: artwork / video + controls */}
           <div className={`no-scrollbar flex min-h-0 flex-col justify-center gap-5 overflow-y-auto max-md:justify-start ${panelOpen ? "max-md:hidden" : ""}`}>
-            {/* Album art is the hero (Apple Music style). For YouTube songs, the official player sits as a
-                small picture-in-picture card on the art's corner: YouTube's terms need it visible and ≥200×200,
-                and at that size it also streams low-res video, so it barely uses data. */}
-            <div className={`relative mx-auto w-full max-w-[min(100%,26rem,40vh)] ${mode === "yt" ? "mb-6" : ""}`}>
+            {/* Album art only (Apple Music style); the YouTube player plays hidden behind the app. */}
+            <div className="relative mx-auto w-full max-w-[min(100%,26rem,40vh)]">
               <img
                 src={cur.art}
                 alt=""
@@ -648,8 +617,6 @@ function NowPlaying({
                   Finding full song…
                 </span>
               )}
-              {/* PlayerBar glues the YouTube player onto this slot (205 = 200px video + its 2.4px border) */}
-              {mode === "yt" && <div ref={setSlot} className="absolute -bottom-6 -right-3 size-[205px] md:-right-10" />}
             </div>
 
             <div className="mx-auto w-full max-w-xl">

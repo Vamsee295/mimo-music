@@ -1,5 +1,5 @@
-// Full-length playback through YouTube's official IFrame Player API (allowed by YouTube's terms
-// as long as the player stays visible, ≥200×200, and isn't modified).
+// Full-length playback through YouTube's official IFrame Player API. Mimo keeps the player hidden
+// (audio + album art only) — a personal-use choice; YouTube's terms want it visible at ≥200×200.
 import type { Track } from "./store";
 import { cleanTitle } from "./extras";
 
