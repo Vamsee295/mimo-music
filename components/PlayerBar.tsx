@@ -469,7 +469,10 @@ function Btn({ label, icon, onClick, on, size = "size-5" }: { label: string; ico
   );
 }
 
-function Scrubber({ sk, thin }: { sk: Seek; thin?: boolean }) {
+function Scrubber({ sk: raw, thin }: { sk: Seek; thin?: boolean }) {
+  // the YouTube player returns undefined/NaN times before it's ready → keep the input controlled
+  const num = (n: number) => (Number.isFinite(n) ? n : 0);
+  const sk = { ...raw, time: num(raw.time), dur: num(raw.dur) };
   const p = `${(sk.time / (sk.dur || 1)) * 100}%`;
   return (
     <div className={`flex items-center gap-2 tabular-nums text-ink/50 ${thin ? "text-[10px]" : "text-xs"}`}>
