@@ -37,6 +37,7 @@ type Actions = {
   playList: (tracks: Track[], start: number, shuffle?: boolean) => void; // start -1 = first (or random if shuffling)
   playNext: (t: Track) => void;
   addToQueue: (t: Track) => void;
+  appendMany: (ts: Track[]) => void; // autoplay: add songs to the end without changing what's playing
   removeAt: (i: number) => void;
   move: (from: number, to: number) => void;
   jumpTo: (i: number) => void;
@@ -95,6 +96,10 @@ export const usePlayer = create<State & Actions>()(
         const { queue, index } = get();
         if (index < 0) return set({ queue: [t], index: 0, playing: true });
         set({ queue: [...queue, t] });
+      },
+
+      appendMany: (ts) => {
+        if (ts.length) set({ queue: [...get().queue, ...ts] });
       },
 
       removeAt: (i) => {

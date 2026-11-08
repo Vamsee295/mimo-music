@@ -7,6 +7,19 @@ let libLoaded = false; // flips once saved data has been read; blocks writes bef
 import type { Track } from "./store";
 import type { Album } from "./api";
 
+/** Something you opened from Search, shown under the search box next time (newest first) */
+export type Recent =
+  | { kind: "song"; track: Track }
+  | { kind: "artist"; id: string; name: string }
+  | { kind: "album"; album: Album }
+  | { kind: "query"; q: string };
+
+export const recentKey = (r: Recent) =>
+  r.kind === "song" ? `s:${r.track.id}` : r.kind === "artist" ? `ar:${r.id}` : r.kind === "album" ? `al:${r.album.id}` : `q:${r.q.toLowerCase()}`;
+
+/** Pure (tested in recents.check.ts): newest first, opening it again moves it to the top, max 20 */
+export const pushRecent = (list: Recent[], r: Recent) => [r, ...list.filter((x) => recentKey(x) !== recentKey(r))].slice(0, 20);
+
 export type MonthStats = { seconds: number; artists: Record<string, number> };
 
 /** Local calendar month, e.g. "2026-11". A new key each month = automatic monthly reset. */
@@ -19,6 +32,7 @@ export type Settings = {
   accent: string;
   explicit: boolean;
   reduceMotion: boolean;
+  autoplay: boolean; // keep playing similar songs when the queue ends
   dataSaver: boolean; // keep the YouTube player small → YouTube streams low-res video (less data)
   ytKey: string; // user's own YouTube Data API key (falls back to NEXT_PUBLIC_YT_KEY)
   sidebarWidth: number; // desktop sidebar, px
@@ -31,11 +45,16 @@ type State = {
   songs: Track[]; // "Add to Library" (Apple-style); loving a song also adds it
   albums: Album[];
   history: Track[]; // newest first
+  recentSearches: Recent[];
   playlists: Playlist[];
   plays: Record<string, number>; // artist → play count, for Account stats
   /** listening time per calendar month ("2026-11"): total seconds + seconds per artist. Old months are kept. */
   listening: Record<string, MonthStats>;
   settings: Settings;
+  /** Library items kept at the top (keys like "playlist:<id>", "album:<id>", "artist:<id>") */
+  pinned: string[];
+  /** artists removed from the Library's Artists list (it's built from your saved songs otherwise) */
+  hiddenArtists: string[];
 };
 
 type Actions = {
@@ -49,9 +68,14 @@ type Actions = {
   removeFromPlaylist: (id: string, index: number) => void;
   editPlaylist: (id: string, patch: Partial<Pick<Playlist, "name" | "desc" | "cover">>) => void;
   deletePlaylist: (id: string) => void;
+  togglePin: (key: string) => void;
+  hideArtist: (id: string) => void;
   setSettings: (s: Partial<Settings>) => void;
   setName: (n: string) => void;
   clearHistory: () => void;
+  addRecent: (r: Recent) => void;
+  removeRecent: (key: string) => void;
+  clearRecents: () => void;
   resetAll: () => void;
 };
 
@@ -61,10 +85,13 @@ const initial: State = {
   songs: [],
   albums: [],
   history: [],
+  recentSearches: [],
   playlists: [],
   plays: {},
   listening: {},
-  settings: { theme: "editorial", country: "in", accent: "#c8603a", explicit: true, reduceMotion: false, dataSaver: true, ytKey: "", sidebarWidth: 240, sidebarCollapsed: false },
+  pinned: [],
+  hiddenArtists: [],
+  settings: { theme: "editorial", country: "in", accent: "#c8603a", explicit: true, reduceMotion: false, autoplay: true, dataSaver: true, ytKey: "", sidebarWidth: 240, sidebarCollapsed: false },
 };
 
 const editPlaylist = (ps: Playlist[], id: string, fn: (p: Playlist) => Playlist) => ps.map((p) => (p.id === id ? fn(p) : p));
@@ -84,10 +111,16 @@ export const useLibrary = create<State & Actions>()(
         }),
 
       toggleSong: (t) =>
-        set((s) => ({ songs: s.songs.some((x) => x.id === t.id) ? s.songs.filter((x) => x.id !== t.id) : [t, ...s.songs] })),
+        set((s) => ({
+          songs: s.songs.some((x) => x.id === t.id) ? s.songs.filter((x) => x.id !== t.id) : [t, ...s.songs],
+          hiddenArtists: s.hiddenArtists.filter((a) => a !== t.artistId), // saving a song by them brings them back
+        })),
 
       toggleAlbum: (a) =>
-        set((s) => ({ albums: s.albums.some((x) => x.id === a.id) ? s.albums.filter((x) => x.id !== a.id) : [{ ...a, added: Date.now() }, ...s.albums] })),
+        set((s) => ({
+          albums: s.albums.some((x) => x.id === a.id) ? s.albums.filter((x) => x.id !== a.id) : [{ ...a, added: Date.now() }, ...s.albums],
+          pinned: s.pinned.filter((k) => k !== `album:${a.id}`),
+        })),
 
       logPlay: (t) =>
         set((s) => ({
@@ -104,11 +137,16 @@ export const useLibrary = create<State & Actions>()(
       removeFromPlaylist: (id, i) =>
         set((s) => ({ playlists: editPlaylist(s.playlists, id, (p) => ({ ...p, tracks: p.tracks.filter((_, j) => j !== i) })) })),
       editPlaylist: (id, patch) => set((s) => ({ playlists: editPlaylist(s.playlists, id, (p) => ({ ...p, ...patch })) })),
-      deletePlaylist: (id) => set((s) => ({ playlists: s.playlists.filter((p) => p.id !== id) })),
+      deletePlaylist: (id) => set((s) => ({ playlists: s.playlists.filter((p) => p.id !== id), pinned: s.pinned.filter((k) => k !== `playlist:${id}`) })),
+      togglePin: (key) => set((s) => ({ pinned: s.pinned.includes(key) ? s.pinned.filter((k) => k !== key) : [key, ...s.pinned] })),
+      hideArtist: (id) => set((s) => ({ hiddenArtists: [...s.hiddenArtists, id], pinned: s.pinned.filter((k) => k !== `artist:${id}`) })),
 
       setSettings: (p) => set({ settings: { ...get().settings, ...p } }),
       setName: (name) => set({ name }),
       clearHistory: () => set({ history: [], plays: {} }),
+      addRecent: (r) => set((s) => ({ recentSearches: pushRecent(s.recentSearches, r) })),
+      removeRecent: (key) => set((s) => ({ recentSearches: s.recentSearches.filter((x) => recentKey(x) !== key) })),
+      clearRecents: () => set({ recentSearches: [] }),
 
       addListening: (sec, artist) =>
         set((s) => {

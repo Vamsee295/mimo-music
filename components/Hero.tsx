@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { Album } from "@/lib/api";
+import { useForeground } from "@/lib/appState";
 import { useLibrary } from "@/lib/library";
 import { usePlayer, type Track } from "@/lib/store";
 import { Icon } from "./Icon";
@@ -106,16 +107,20 @@ export function Ticker({ songs }: { songs: Track[] }) {
   const firstRow = useRef<HTMLDivElement>(null);
   const paused = useRef(false);
 
+  const onScreen = useForeground();
   useEffect(() => {
     const el = track.current;
-    if (!el || reduce) return;
+    if (!el || reduce || !onScreen) return; // off screen (Android app in background): no frame loop at all
     let x = 0;
     let last = performance.now();
     let raf = 0;
+    // width of one copy of the list, measured when it changes, not read every frame (that forced layout)
+    let loop = firstRow.current?.offsetWidth ?? 0;
+    const ro = new ResizeObserver(() => (loop = firstRow.current?.offsetWidth ?? 0));
+    if (firstRow.current) ro.observe(firstRow.current);
     const tick = (now: number) => {
       const dt = Math.min(now - last, 100) / 1000; // clamp so a background tab doesn't jump on return
       last = now;
-      const loop = firstRow.current?.offsetWidth ?? 0; // one full copy of the list
       if (!paused.current && loop) {
         x -= TICKER_SPEED * dt;
         if (-x >= loop) x += loop; // seamless: the second copy is identical
@@ -124,8 +129,11 @@ export function Ticker({ songs }: { songs: Track[] }) {
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [reduce, songs.length]);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, [reduce, songs.length, onScreen]);
 
   if (!songs.length) return null;
   const items = songs.slice(0, 20);

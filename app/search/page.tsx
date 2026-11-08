@@ -1,10 +1,12 @@
 "use client";
 import Link from "next/link";
+import { ArtistAvatar } from "@/components/ArtistAvatar";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { GENRES, search, topAlbums } from "@/lib/api";
 import { useData } from "@/lib/useData";
-import { useLibrary } from "@/lib/library";
+import { recentKey, useLibrary, type Recent } from "@/lib/library";
+import { usePlayer } from "@/lib/store";
 import { TrackList } from "@/components/TrackRow";
 import { Icon } from "@/components/Icon";
 import { AlbumCard, ErrorNote, PageHeader, Section, Shelf, Skeleton } from "@/components/ui";
@@ -24,6 +26,7 @@ export default function SearchPage() {
   }, [q, router]);
 
   const res = useData(debounced ? `search:${debounced}` : null, () => search(debounced));
+  const remember = useLibrary((s) => s.addRecent);
 
   return (
     <>
@@ -32,11 +35,16 @@ export default function SearchPage() {
       <label className="brut flex items-center gap-3 rounded-2xl bg-card px-4 py-3 focus-within:border-accent">
         <Icon name="search" className="size-5 text-ink/50" />
         <input
-          autoFocus
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Artists, Songs, Albums"
           enterKeyHint="search"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && q.trim()) {
+              remember({ kind: "query", q: q.trim() });
+              e.currentTarget.blur(); // hide the phone keyboard to show results
+            }
+          }}
           className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-ink/40"
         />
         {q && (
@@ -46,6 +54,8 @@ export default function SearchPage() {
         )}
       </label>
       </div>
+
+      {!debounced && <RecentSearches onQuery={setQ} />}
 
       {!debounced && (
         <Section title="Browse Categories">
@@ -68,8 +78,12 @@ export default function SearchPage() {
             <Section title="Artists">
               <Shelf>
                 {res.data.artists.map((a) => (
-                  <Link key={a.id} href={`/artist?id=${a.id}`} className="flex w-28 shrink-0 snap-start flex-col items-center gap-2 text-center">
-                    <span className="grid size-24 place-items-center rounded-full bg-gradient-to-br from-ink/20 to-ink/5 text-3xl font-bold">{a.name[0]}</span>
+                  <Link
+                    key={a.id}
+                    href={`/artist?id=${a.id}`}
+                    onClick={() => remember({ kind: "artist", id: a.id, name: a.name })}
+                    className="flex w-28 shrink-0 snap-start flex-col items-center gap-2 text-center">
+                    <ArtistAvatar name={a.name} className="size-24 bg-gradient-to-br from-ink/20 to-ink/5" textClass="text-3xl font-bold" />
                     <span className="w-full truncate text-[13px]">{a.name}</span>
                     <span className="-mt-2 w-full truncate text-[11px] text-ink/40">{a.genre}</span>
                   </Link>
@@ -79,14 +93,16 @@ export default function SearchPage() {
           )}
           {res.data.songs.length > 0 && (
             <Section title="Songs">
-              <TrackList tracks={res.data.songs} />
+              <TrackList tracks={res.data.songs} single onPick={(track) => remember({ kind: "song", track })} />
             </Section>
           )}
           {res.data.albums.length > 0 && (
             <Section title="Albums">
               <Shelf>
                 {res.data.albums.map((a) => (
-                  <AlbumCard key={a.id} album={a} />
+                  <div key={a.id} onClickCapture={() => remember({ kind: "album", album: a })}>
+                    <AlbumCard album={a} />
+                  </div>
                 ))}
               </Shelf>
             </Section>
@@ -94,6 +110,66 @@ export default function SearchPage() {
         </>
       )}
     </>
+  );
+}
+
+/** What you opened from Search before: tap to open it again (a song plays straight away), X to forget it. */
+function RecentSearches({ onQuery }: { onQuery: (q: string) => void }) {
+  const recents = useLibrary((s) => s.recentSearches);
+  const { addRecent, removeRecent, clearRecents } = useLibrary.getState();
+  const router = useRouter();
+  if (!recents.length) return null;
+
+  const open = (r: Recent) => {
+    addRecent(r); // back to the top
+    if (r.kind === "song") usePlayer.getState().playList([r.track], 0); // Autoplay lines up related songs
+    else if (r.kind === "artist") router.push(`/artist?id=${r.id}`);
+    else if (r.kind === "album") router.push(`/album?id=${r.album.id}`);
+    else onQuery(r.q);
+  };
+
+  return (
+    <Section title="Recent Searches">
+      <button onClick={clearRecents} className="tap label-cond -mt-2 mb-1 block text-sm text-ink/50 hover:text-ink">
+        Clear all
+      </button>
+      <ul>
+        {recents.map((r) => {
+          const key = recentKey(r);
+          const [title, sub] =
+            r.kind === "song"
+              ? [r.track.title, `Song · ${r.track.artist}`]
+              : r.kind === "artist"
+                ? [r.name, "Artist"]
+                : r.kind === "album"
+                  ? [r.album.title, `Album · ${r.album.artist}`]
+                  : [r.q, "Search"];
+          const art = r.kind === "song" ? r.track.art : r.kind === "album" ? r.album.art : "";
+          return (
+            <li key={key} className="flex items-center gap-1">
+              <button onClick={() => open(r)} className="tap flex min-w-0 flex-1 items-center gap-3 py-2 text-left">
+                {art ? (
+                  <img src={art.replace("600x600", "120x120")} alt="" className="size-12 shrink-0 rounded-lg bg-ink/5 object-cover" />
+                ) : r.kind === "artist" ? (
+                  <ArtistAvatar name={r.name} className="size-12 shrink-0 bg-gradient-to-br from-ink/20 to-ink/5" textClass="text-lg font-bold" />
+                ) : (
+                  <span className="grid size-12 shrink-0 place-items-center rounded-lg bg-ink/5 text-ink/50">
+                    <Icon name="search" className="size-5" />
+                  </span>
+                )}
+                <span className="min-w-0">
+                  <span className="block truncate text-[15px]">{title}</span>
+                  <span className="block truncate text-[13px] text-ink/50">{sub}</span>
+                </span>
+              </button>
+              <button onClick={() => removeRecent(key)} aria-label={`Remove ${title} from recent searches`} className="tap tap-lg grid size-10 shrink-0 place-items-center text-ink/45 hover:text-ink">
+                <Icon name="close" className="size-4" />
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </Section>
   );
 }
 

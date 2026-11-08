@@ -1,6 +1,7 @@
 // Apple catalog via public iTunes endpoints (all send CORS headers → works in browser and APK).
 import type { Track } from "./store";
 import { useLibrary } from "./library";
+import { Capacitor, CapacitorHttp } from "@capacitor/core";
 
 export type Album = {
   id: string;
@@ -77,13 +78,34 @@ const settings = () => useLibrary.getState().settings;
 
 // ponytail: in-memory promise cache, lives for the app session; add TTL if data goes stale in long sessions
 const cache = new Map<string, Promise<unknown>>();
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Apple rate-limits the iTunes API per IP (roughly 20 calls a minute). Over the limit it answers without CORS
+ *  headers, which the browser reports as "Failed to fetch" — so a failed call waits and tries again (2s, then 6s)
+ *  before the page shows "couldn't load this". */
+async function fetchJson(url: string, retries = [2000, 6000]): Promise<unknown> {
+  try {
+    // In the APK, ask through Android's own HTTP client with Mimo's own user agent. From the WebView, every
+    // call carries a browser user agent, and Apple's limit for browser user agents is very tight: a few
+    // searches plus Autoplay and every page said "couldn't load this" for a while. (No CORS needed natively.)
+    if (Capacitor.isNativePlatform()) {
+      const r = await CapacitorHttp.get({ url, headers: { "User-Agent": "Mimo/1.0 (Android)" }, responseType: "text" });
+      if (r.status < 200 || r.status >= 300) throw new Error(`${r.status}`);
+      return typeof r.data === "string" ? JSON.parse(r.data) : r.data;
+    }
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`${r.status}`);
+    return await r.json();
+  } catch (e) {
+    if (!retries.length) throw e;
+    await wait(retries[0]);
+    return fetchJson(url, retries.slice(1));
+  }
+}
+
 function get<T>(url: string): Promise<T> {
   if (!cache.has(url)) {
-    const p = fetch(url)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status}`);
-        return r.json();
-      })
+    const p = fetchJson(url)
       .catch((e) => {
         cache.delete(url);
         throw e;
@@ -129,19 +151,26 @@ const allowed = (as: Album[]) => as.filter((a) => settings().explicit || !a.expl
 const songs = (rs: Raw[]) => playable(rs.filter((r) => r.kind === "song").map(toTrack));
 const albums = (rs: Raw[]) => allowed(rs.filter((r) => r.wrapperType === "collection").map(toAlbum));
 
+/** One request for songs + albums (Apple allows only ~20 searches a minute, so this used to be three calls:
+ *  songs, albums and artists). Artists come from the songs' main artists, most-matched first. */
 export async function search(q: string) {
-  const c = settings().country;
-  const u = (entity: string, limit: number) => `${IT}/search?term=${encodeURIComponent(q)}&country=${c}&media=music&entity=${entity}&limit=${limit}`;
-  const [s, a, ar] = await Promise.all([
-    get<{ results: Raw[] }>(u("song", 40)),
-    get<{ results: Raw[] }>(u("album", 20)),
-    get<{ results: Raw[] }>(u("musicArtist", 10)),
-  ]);
-  return {
-    songs: songs(s.results),
-    albums: albums(a.results),
-    artists: ar.results.map((r) => ({ id: String(r.artistId), name: r.artistName ?? "", genre: r.primaryGenreName ?? "" })),
-  };
+  const { results } = await get<{ results: Raw[] }>(
+    `${IT}/search?term=${encodeURIComponent(q)}&country=${settings().country}&media=music&entity=song,album&limit=60`,
+  );
+  const found = songs(results);
+  const artists = new Map<string, Artist>();
+  for (const r of results)
+    if (r.kind === "song" && r.artistId && !artists.has(String(r.artistId)))
+      artists.set(String(r.artistId), { id: String(r.artistId), name: (r.artistName ?? "").split(/\s*(?:,|&)\s*/)[0], genre: r.primaryGenreName ?? "" });
+  return { songs: found.slice(0, 40), albums: albums(results).slice(0, 20), artists: [...artists.values()].slice(0, 10) };
+}
+
+/** Songs only, one request (Autoplay uses this; search() makes three) */
+export async function searchSongs(q: string, limit = 25) {
+  const { results } = await get<{ results: Raw[] }>(
+    `${IT}/search?term=${encodeURIComponent(q)}&country=${settings().country}&media=music&entity=song&limit=${limit}`,
+  );
+  return songs(results);
 }
 
 export async function getAlbum(id: string) {

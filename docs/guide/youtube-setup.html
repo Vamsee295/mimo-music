@@ -1,0 +1,199 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Mimo - YouTube key setup</title>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:wght@600;700&family=Caveat:wght@600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=block" rel="stylesheet">
+<style>
+:root{--paper:#f5efe6;--card:#fbf8f2;--card2:#efe7da;--ink:#191614;--note:#2f6f6a;--accent:#c8603a;--dots:rgb(25 22 20/.09)}
+@page{size:A4;margin:0}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{font-family:Inter,system-ui,sans-serif;color:var(--ink);font-size:10.5pt;line-height:1.55}
+.page{width:210mm;height:297mm;padding:16mm 16mm 14mm;position:relative;overflow:hidden;break-after:page;
+  background-color:var(--paper);background-image:radial-gradient(var(--dots) 1.1px,transparent 1.5px);background-size:18px 18px}
+.page:last-child{break-after:auto}
+.page>*{position:relative;z-index:1}
+.eyebrow{font-family:"JetBrains Mono",monospace;font-size:8.5pt;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.display{font-family:Anton,Impact,sans-serif;font-weight:400;text-transform:uppercase;letter-spacing:-.02em;line-height:.95}
+.label-cond{font-family:"Barlow Condensed",sans-serif;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.hand{font-family:Caveat,cursive;font-weight:600}
+.hl{display:inline-block;background:var(--accent);color:var(--paper);border-radius:10px;padding:.04em .16em 0;transform:rotate(-1.5deg)}
+.brut{border:2.4px solid var(--ink);box-shadow:4px 5px 0 var(--ink);border-radius:18px;background:var(--card)}
+.top{display:flex;justify-content:space-between;align-items:center}
+.brand{display:flex;align-items:center;gap:10px}
+.brand b{font-family:Anton;font-weight:400;font-size:20pt;text-transform:uppercase}
+.foot{position:absolute!important;left:16mm;right:16mm;bottom:9mm;display:flex;justify-content:space-between;border-top:2px dashed rgb(25 22 20/.18);padding-top:3mm}
+.hero{margin-top:20mm}
+.hero h1{font-size:60pt;margin:5mm 0 7mm}
+.lede{font-size:13pt;max-width:150mm;color:rgb(25 22 20/.78)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6mm;margin-top:13mm}
+.stat{padding:6mm 6mm 5mm}
+.stat .display{font-size:30pt}
+.stat .label-cond{font-size:10.5pt;color:rgb(25 22 20/.65);margin-top:2mm}
+.stat.ink{background:var(--ink);color:var(--paper)} .stat.ink .label-cond{color:rgb(245 239 230/.7)}
+.stat.rust{background:var(--accent);color:var(--paper)} .stat.rust .label-cond{color:rgb(245 239 230/.88)}
+.need{margin-top:11mm;padding:7mm 8mm}
+.need h2{font-size:20pt;margin-bottom:3mm}
+.need li{list-style:none;padding:2.2mm 0 2.2mm 8mm;position:relative;border-bottom:1.5px dashed rgb(25 22 20/.15)}
+.need li:last-child{border:0}
+.need li:before{content:"";position:absolute;left:0;top:4.3mm;width:3mm;height:3mm;border-radius:50%;background:var(--accent)}
+.bigmark{position:absolute!important;z-index:0!important;right:-30mm;bottom:-34mm;opacity:.07;transform:rotate(-12deg)}
+.ticker{position:absolute!important;left:-5mm;right:-5mm;bottom:24mm;background:var(--ink);color:var(--paper);padding:3mm 0;white-space:nowrap;overflow:hidden;transform:rotate(-2deg);font-family:Anton;font-size:15pt;text-transform:uppercase}
+.ticker span{color:var(--accent);margin:0 5mm}
+.ph{margin:6mm 0 5mm}
+.ph h2{font-size:36pt;margin-top:2mm}
+.step{display:grid;grid-template-columns:20mm 1fr;gap:4mm;padding:4mm 6mm;margin-bottom:4.5mm;align-items:start}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:5mm}
+.pair .step{grid-template-columns:1fr;gap:1.5mm;align-content:start}
+.num{font-family:Anton;font-size:32pt;line-height:.9;color:var(--accent)}
+.step h3{font-size:14.5pt;line-height:1.1;margin-bottom:1.2mm}
+.step p{color:rgb(25 22 20/.8)}
+.link{margin-top:2.5mm;display:flex;gap:3mm;align-items:center;background:var(--card2);border-radius:10px;padding:1.8mm 3.5mm}
+.url{font-family:"JetBrains Mono",monospace;font-size:8.6pt;word-break:break-all}
+.chips{display:flex;flex-wrap:wrap;align-items:center;gap:2mm;margin-top:2.5mm}
+.chip{font-family:"Barlow Condensed";font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-size:10pt;border:2px solid var(--ink);border-radius:999px;padding:.5mm 3.2mm;background:var(--paper)}
+.chip:last-child{background:var(--ink);color:var(--paper)}
+.arrow{color:var(--accent);font-weight:700}
+.tip{margin-top:2.5mm;font-size:9.5pt;color:rgb(25 22 20/.7)}
+.tip .hand{font-size:15pt;color:var(--note);margin-right:2mm}
+.key{font-family:"JetBrains Mono";font-size:9.5pt;background:var(--ink);color:var(--paper);border-radius:6px;padding:.3mm 1.8mm}
+.mock{margin-top:3mm;padding:3.5mm 4.5mm;border-radius:14px;background:var(--paper);border:2px solid var(--ink)}
+.mock .ok{display:flex;align-items:center;gap:2mm;color:var(--note);font-weight:600;font-size:9.5pt}
+.mock .ok i{width:2.2mm;height:2.2mm;border-radius:50%;background:var(--note)}
+.mock .row{display:flex;gap:2mm;margin-top:2.5mm}
+.mock .field{flex:1;border:2px solid var(--ink);border-radius:10px;padding:1.4mm 3mm;font-family:"JetBrains Mono";font-size:9pt;letter-spacing:.12em;background:var(--card)}
+.mock .btn{font-family:"Barlow Condensed";font-weight:700;text-transform:uppercase;border:2px solid var(--ink);border-radius:10px;padding:1.4mm 3.5mm;font-size:10pt;background:var(--card)}
+.mock .btn.dark{background:var(--ink);color:var(--paper)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:6mm}
+.card{padding:6mm}
+.card h3{font-size:16pt;margin-bottom:2mm}
+.card.ink{background:var(--ink);color:var(--paper)} .card.ink p{color:rgb(245 239 230/.82)}
+.meter{height:5mm;border:2px solid var(--paper);border-radius:999px;margin:4mm 0 1.5mm;overflow:hidden;display:flex}
+.meter i{display:block;height:100%;width:1%;background:var(--accent);border-right:1px solid var(--ink)}
+.meter-l{display:flex;justify-content:space-between;font-family:"JetBrains Mono";font-size:7.5pt;color:rgb(245 239 230/.6);margin-bottom:3mm}
+table{width:100%;border-collapse:collapse;font-size:9.6pt}
+td{padding:2.6mm 3mm;vertical-align:top;border-bottom:1.5px dashed rgb(25 22 20/.18)}
+tr:last-child td{border:0}
+td:first-child{font-family:"Barlow Condensed";font-weight:700;text-transform:uppercase;letter-spacing:.03em;font-size:10.5pt;width:36%;color:var(--accent)}
+.trouble{padding:3mm 4mm;margin-top:4mm}
+.sub{font-size:17pt;margin:8mm 0 1mm}
+.end{margin-top:9mm;text-align:center}
+.end .display{font-size:30pt}
+</style></head><body>
+
+<div class="page">
+  <div class="top"><div class="brand"><svg width="40" height="40" viewBox="0 0 512 512"><rect x="9.3" y="9.6" width="493.4" height="492.8" rx="100" fill="none" stroke="var(--ink)" stroke-width="18.6"/><path d="M112.2 128 L118 112.7 L123.9 104.1 L129.7 98.4 L135.6 94.6 L141.4 90.7 L147.3 88.8 L153.1 87.9 L159 86.9 L164.8 86.9 L170.7 87.9 L176.5 88.8 L182.4 90.7 L188.2 94.6 L194.1 97.4 L199.9 100.3 L205.8 104.1 L211.6 107 L217.5 110.8 L223.3 113.7 L229.2 117.5 L235 121.3 L240.9 124.2 L246.7 128 L252.6 130.9 L258.4 134.7 L264.3 137.6 L270.1 141.4 L276 144.2 L281.8 148.1 L287.7 151.9 L293.5 154.7 L299.4 158.6 L305.2 161.4 L311.1 165.3 L317 168.1 L322.8 171.9 L328.7 174.8 L334.5 178.6 L340.4 181.5 L346.2 185.3 L352.1 189.1 L357.9 192 L363.8 195.8 L369.6 198.7 L375.5 202.5 L381.3 205.4 L387.2 209.2 L393 212.1 L398.9 215.9 L404.7 218.7 L410.6 222.6 L416.4 228.3 L422.3 235.9 L428.1 251.2 L428.1 268.4 L422.3 282.7 L416.4 290.4 L410.6 296.1 L404.7 299.9 L398.9 302.8 L393 306.6 L387.2 310.4 L381.3 313.3 L375.5 316.2 L369.6 320 L363.8 323.8 L357.9 326.7 L352.1 330.5 L346.2 333.4 L340.4 337.2 L334.5 340.1 L328.7 343.9 L322.8 346.7 L317 350.6 L311.1 354.4 L305.2 357.3 L299.4 361.1 L293.5 363.9 L287.7 367.8 L281.8 370.6 L276 374.4 L270.1 377.3 L264.3 381.1 L258.4 384 L252.6 387.8 L246.7 390.7 L240.9 394.5 L235 397.4 L229.2 401.2 L223.3 405 L217.5 407.9 L211.6 411.7 L205.8 414.6 L199.9 418.4 L194.1 421.3 L188.2 425.1 L182.4 427.9 L176.5 429.9 L170.7 430.8 L164.8 431.8 L159 431.8 L153.1 430.8 L147.3 429.9 L141.4 427 L135.6 424.1 L129.7 420.3 L123.9 414.6 L118 406 L112.2 389.7Z" fill="var(--ink)"/><path d="M112.2 308.5 L118 302.8 L123.9 294.2 L129.7 284.7 L135.6 274.1 L141.4 261.7 L147.3 249.3 L153.1 237.9 L159 226.4 L164.8 214.9 L170.7 205.4 L176.5 198.7 L182.4 193.9 L188.2 191 L194.1 189.1 L199.9 188.2 L205.8 188.2 L211.6 189.1 L217.5 191 L223.3 194.9 L229.2 199.6 L235 207.3 L240.9 217.8 L246.7 229.3 L252.6 241.7 L258.4 253.1 L264.3 262.7 L270.1 268.4 L276 270.3 L281.8 269.4 L287.7 266.5 L293.5 259.8 L299.4 251.2 L305.2 240.7 L311.1 233.1 L317 227.3 L322.8 223.5 L328.7 221.6 L334.5 221.6 L340.4 222.6 L346.2 225.4 L352.1 231.2 L357.9 238.8 L363.8 250.3 L369.6 262.7 L375.5 275.1 L381.3 287.5 L384.2 293.3 L384.2 295.2 L381.3 294.2 L375.5 293.3 L369.6 289.4 L363.8 285.6 L357.9 279.9 L352.1 274.1 L346.2 270.3 L340.4 268.4 L334.5 267.5 L328.7 269.4 L322.8 273.2 L317 279.9 L311.1 289.4 L305.2 299 L299.4 309.5 L293.5 317.1 L287.7 322.9 L281.8 325.7 L276 327.6 L270.1 327.6 L264.3 327.6 L258.4 324.8 L252.6 321 L246.7 315.2 L240.9 305.7 L235 294.2 L229.2 282.7 L223.3 272.2 L217.5 264.6 L211.6 259.8 L205.8 257 L199.9 257 L194.1 258.9 L188.2 263.6 L182.4 271.3 L176.5 281.8 L170.7 293.3 L164.8 305.7 L159 317.1 L153.1 326.7 L147.3 332.4 L141.4 335.3 L135.6 337.2 L129.7 338.1 L123.9 337.2 L118 335.3 L112.2 332.4Z" fill="var(--paper)"/></svg><b>Mimo</b></div><span class="eyebrow">Setup guide &middot; v1</span></div>
+  <div class="hero">
+    <span class="eyebrow">Full songs, not previews</span>
+    <h1 class="display">Unlock every<br>song with your<br><span class="hl">YouTube key</span></h1>
+    <p class="lede">Without a key, Mimo plays 30-second previews. Add a free YouTube Data API key and every song plays in full, on your phone, with the screen off and from the lock screen.</p>
+  </div>
+  <div class="stats">
+    <div class="stat brut"><div class="display">&#8377;0</div><div class="label-cond">Free &middot; no card needed</div></div>
+    <div class="stat brut ink"><div class="display">5 min</div><div class="label-cond">One-time setup</div></div>
+    <div class="stat brut rust"><div class="display">~99</div><div class="label-cond">New songs a day</div></div>
+  </div>
+  <div class="need brut">
+    <h2 class="display">What you need</h2>
+    <ul>
+      <li>A Google account (the one you use for Gmail or YouTube works)</li>
+      <li>A browser on your phone or laptop, for Google Cloud Console</li>
+      <li>Mimo installed and open on <b>Settings</b></li>
+    </ul>
+  </div>
+  <div class="ticker">Search it <span>&#10022;</span> Play it <span>&#10022;</span> Full songs <span>&#10022;</span> Screen off <span>&#10022;</span> Lock screen <span>&#10022;</span> Search it <span>&#10022;</span> Play it</div>
+  <div class="bigmark"><svg width="380" height="380" viewBox="0 0 512 512"><rect x="9.3" y="9.6" width="493.4" height="492.8" rx="100" fill="none" stroke="var(--ink)" stroke-width="18.6"/><path d="M112.2 128 L118 112.7 L123.9 104.1 L129.7 98.4 L135.6 94.6 L141.4 90.7 L147.3 88.8 L153.1 87.9 L159 86.9 L164.8 86.9 L170.7 87.9 L176.5 88.8 L182.4 90.7 L188.2 94.6 L194.1 97.4 L199.9 100.3 L205.8 104.1 L211.6 107 L217.5 110.8 L223.3 113.7 L229.2 117.5 L235 121.3 L240.9 124.2 L246.7 128 L252.6 130.9 L258.4 134.7 L264.3 137.6 L270.1 141.4 L276 144.2 L281.8 148.1 L287.7 151.9 L293.5 154.7 L299.4 158.6 L305.2 161.4 L311.1 165.3 L317 168.1 L322.8 171.9 L328.7 174.8 L334.5 178.6 L340.4 181.5 L346.2 185.3 L352.1 189.1 L357.9 192 L363.8 195.8 L369.6 198.7 L375.5 202.5 L381.3 205.4 L387.2 209.2 L393 212.1 L398.9 215.9 L404.7 218.7 L410.6 222.6 L416.4 228.3 L422.3 235.9 L428.1 251.2 L428.1 268.4 L422.3 282.7 L416.4 290.4 L410.6 296.1 L404.7 299.9 L398.9 302.8 L393 306.6 L387.2 310.4 L381.3 313.3 L375.5 316.2 L369.6 320 L363.8 323.8 L357.9 326.7 L352.1 330.5 L346.2 333.4 L340.4 337.2 L334.5 340.1 L328.7 343.9 L322.8 346.7 L317 350.6 L311.1 354.4 L305.2 357.3 L299.4 361.1 L293.5 363.9 L287.7 367.8 L281.8 370.6 L276 374.4 L270.1 377.3 L264.3 381.1 L258.4 384 L252.6 387.8 L246.7 390.7 L240.9 394.5 L235 397.4 L229.2 401.2 L223.3 405 L217.5 407.9 L211.6 411.7 L205.8 414.6 L199.9 418.4 L194.1 421.3 L188.2 425.1 L182.4 427.9 L176.5 429.9 L170.7 430.8 L164.8 431.8 L159 431.8 L153.1 430.8 L147.3 429.9 L141.4 427 L135.6 424.1 L129.7 420.3 L123.9 414.6 L118 406 L112.2 389.7Z" fill="var(--ink)"/><path d="M112.2 308.5 L118 302.8 L123.9 294.2 L129.7 284.7 L135.6 274.1 L141.4 261.7 L147.3 249.3 L153.1 237.9 L159 226.4 L164.8 214.9 L170.7 205.4 L176.5 198.7 L182.4 193.9 L188.2 191 L194.1 189.1 L199.9 188.2 L205.8 188.2 L211.6 189.1 L217.5 191 L223.3 194.9 L229.2 199.6 L235 207.3 L240.9 217.8 L246.7 229.3 L252.6 241.7 L258.4 253.1 L264.3 262.7 L270.1 268.4 L276 270.3 L281.8 269.4 L287.7 266.5 L293.5 259.8 L299.4 251.2 L305.2 240.7 L311.1 233.1 L317 227.3 L322.8 223.5 L328.7 221.6 L334.5 221.6 L340.4 222.6 L346.2 225.4 L352.1 231.2 L357.9 238.8 L363.8 250.3 L369.6 262.7 L375.5 275.1 L381.3 287.5 L384.2 293.3 L384.2 295.2 L381.3 294.2 L375.5 293.3 L369.6 289.4 L363.8 285.6 L357.9 279.9 L352.1 274.1 L346.2 270.3 L340.4 268.4 L334.5 267.5 L328.7 269.4 L322.8 273.2 L317 279.9 L311.1 289.4 L305.2 299 L299.4 309.5 L293.5 317.1 L287.7 322.9 L281.8 325.7 L276 327.6 L270.1 327.6 L264.3 327.6 L258.4 324.8 L252.6 321 L246.7 315.2 L240.9 305.7 L235 294.2 L229.2 282.7 L223.3 272.2 L217.5 264.6 L211.6 259.8 L205.8 257 L199.9 257 L194.1 258.9 L188.2 263.6 L182.4 271.3 L176.5 281.8 L170.7 293.3 L164.8 305.7 L159 317.1 L153.1 326.7 L147.3 332.4 L141.4 335.3 L135.6 337.2 L129.7 338.1 L123.9 337.2 L118 335.3 L112.2 332.4Z" fill="var(--paper)"/></svg></div>
+  <div class="foot"><span class="eyebrow">Mimo &middot; music, everywhere.</span><span class="eyebrow">01 / 03</span></div>
+</div>
+
+<div class="page">
+  <div class="top"><div class="brand"><svg width="28" height="28" viewBox="0 0 512 512"><rect x="9.3" y="9.6" width="493.4" height="492.8" rx="100" fill="none" stroke="var(--ink)" stroke-width="18.6"/><path d="M112.2 128 L118 112.7 L123.9 104.1 L129.7 98.4 L135.6 94.6 L141.4 90.7 L147.3 88.8 L153.1 87.9 L159 86.9 L164.8 86.9 L170.7 87.9 L176.5 88.8 L182.4 90.7 L188.2 94.6 L194.1 97.4 L199.9 100.3 L205.8 104.1 L211.6 107 L217.5 110.8 L223.3 113.7 L229.2 117.5 L235 121.3 L240.9 124.2 L246.7 128 L252.6 130.9 L258.4 134.7 L264.3 137.6 L270.1 141.4 L276 144.2 L281.8 148.1 L287.7 151.9 L293.5 154.7 L299.4 158.6 L305.2 161.4 L311.1 165.3 L317 168.1 L322.8 171.9 L328.7 174.8 L334.5 178.6 L340.4 181.5 L346.2 185.3 L352.1 189.1 L357.9 192 L363.8 195.8 L369.6 198.7 L375.5 202.5 L381.3 205.4 L387.2 209.2 L393 212.1 L398.9 215.9 L404.7 218.7 L410.6 222.6 L416.4 228.3 L422.3 235.9 L428.1 251.2 L428.1 268.4 L422.3 282.7 L416.4 290.4 L410.6 296.1 L404.7 299.9 L398.9 302.8 L393 306.6 L387.2 310.4 L381.3 313.3 L375.5 316.2 L369.6 320 L363.8 323.8 L357.9 326.7 L352.1 330.5 L346.2 333.4 L340.4 337.2 L334.5 340.1 L328.7 343.9 L322.8 346.7 L317 350.6 L311.1 354.4 L305.2 357.3 L299.4 361.1 L293.5 363.9 L287.7 367.8 L281.8 370.6 L276 374.4 L270.1 377.3 L264.3 381.1 L258.4 384 L252.6 387.8 L246.7 390.7 L240.9 394.5 L235 397.4 L229.2 401.2 L223.3 405 L217.5 407.9 L211.6 411.7 L205.8 414.6 L199.9 418.4 L194.1 421.3 L188.2 425.1 L182.4 427.9 L176.5 429.9 L170.7 430.8 L164.8 431.8 L159 431.8 L153.1 430.8 L147.3 429.9 L141.4 427 L135.6 424.1 L129.7 420.3 L123.9 414.6 L118 406 L112.2 389.7Z" fill="var(--ink)"/><path d="M112.2 308.5 L118 302.8 L123.9 294.2 L129.7 284.7 L135.6 274.1 L141.4 261.7 L147.3 249.3 L153.1 237.9 L159 226.4 L164.8 214.9 L170.7 205.4 L176.5 198.7 L182.4 193.9 L188.2 191 L194.1 189.1 L199.9 188.2 L205.8 188.2 L211.6 189.1 L217.5 191 L223.3 194.9 L229.2 199.6 L235 207.3 L240.9 217.8 L246.7 229.3 L252.6 241.7 L258.4 253.1 L264.3 262.7 L270.1 268.4 L276 270.3 L281.8 269.4 L287.7 266.5 L293.5 259.8 L299.4 251.2 L305.2 240.7 L311.1 233.1 L317 227.3 L322.8 223.5 L328.7 221.6 L334.5 221.6 L340.4 222.6 L346.2 225.4 L352.1 231.2 L357.9 238.8 L363.8 250.3 L369.6 262.7 L375.5 275.1 L381.3 287.5 L384.2 293.3 L384.2 295.2 L381.3 294.2 L375.5 293.3 L369.6 289.4 L363.8 285.6 L357.9 279.9 L352.1 274.1 L346.2 270.3 L340.4 268.4 L334.5 267.5 L328.7 269.4 L322.8 273.2 L317 279.9 L311.1 289.4 L305.2 299 L299.4 309.5 L293.5 317.1 L287.7 322.9 L281.8 325.7 L276 327.6 L270.1 327.6 L264.3 327.6 L258.4 324.8 L252.6 321 L246.7 315.2 L240.9 305.7 L235 294.2 L229.2 282.7 L223.3 272.2 L217.5 264.6 L211.6 259.8 L205.8 257 L199.9 257 L194.1 258.9 L188.2 263.6 L182.4 271.3 L176.5 281.8 L170.7 293.3 L164.8 305.7 L159 317.1 L153.1 326.7 L147.3 332.4 L141.4 335.3 L135.6 337.2 L129.7 338.1 L123.9 337.2 L118 335.3 L112.2 332.4Z" fill="var(--paper)"/></svg><b style="font-size:15pt">Mimo</b></div><span class="eyebrow">Step by step</span></div>
+  <div class="ph"><span class="eyebrow">01 / Get the key</span><h2 class="display">Six steps to <span class="hl">full songs</span></h2></div>
+  <div class="pair">
+<section class="step brut">
+  <div class="num">01</div>
+  <div>
+    <h3 class="label-cond">Create a Google Cloud project</h3>
+    <p>Sign in with Google, name it <b>Mimo</b>, press <b>Create</b>. Accept the terms if asked. It's free.</p>
+    <div class="link"><span class="eyebrow">Open</span><span class="url">console.cloud.google.com/projectcreate</span></div>
+  </div>
+</section>
+  
+<section class="step brut">
+  <div class="num">02</div>
+  <div>
+    <h3 class="label-cond">Turn on YouTube Data API v3</h3>
+    <p>With your <b>Mimo</b> project selected at the top, press <b>Enable</b>.</p>
+    <div class="link"><span class="eyebrow">Open</span><span class="url">console.cloud.google.com/apis/library/<wbr>youtube.googleapis.com</span></div>
+  </div>
+</section></div>
+  
+<section class="step brut">
+  <div class="num">03</div>
+  <div>
+    <h3 class="label-cond">Create an API key</h3>
+    <p>Open Credentials, then:</p>
+    <div class="chips"><span class="chip">Create credentials</span><span class="arrow">&rarr;</span><span class="chip">API key</span></div><div class="link"><span class="eyebrow">Open</span><span class="url">console.cloud.google.com/apis/credentials</span></div><p class="tip"><span class="hand">tip</span>A key starts with <span class="key">AIza</span> and is exactly 39 characters. Not the "OAuth client ID".</p>
+  </div>
+</section>
+  
+<section class="step brut">
+  <div class="num">04</div>
+  <div>
+    <h3 class="label-cond">Lock the key to YouTube (recommended)</h3>
+    <p>On the key press <b>Edit API key</b> &rarr; <b>Restrict key</b> &rarr; tick only <b>YouTube Data API v3</b> &rarr; <b>Save</b>. Leave "Application restrictions" on <b>None</b> so the Android app can use it.</p>
+    
+  </div>
+</section>
+  <div class="pair">
+<section class="step brut">
+  <div class="num">05</div>
+  <div>
+    <h3 class="label-cond">Paste it into Mimo</h3>
+    <p>On the API keys row press <b>Show key</b>, copy it. In Mimo:</p>
+    <div class="chips"><span class="chip">You</span><span class="arrow">&rarr;</span><span class="chip">Settings</span><span class="arrow">&rarr;</span><span class="chip">Full songs (YouTube)</span></div><p style="margin-top:2.2mm">Paste it into <b>YouTube Data API key</b>.</p>
+  </div>
+</section>
+  
+<section class="step brut">
+  <div class="num">06</div>
+  <div>
+    <h3 class="label-cond">Test, then save</h3>
+    <p>Press <b>Test</b>. When it says <i>Working</i>, press <b>Save settings</b>.</p>
+    <div class="mock"><div class="ok"><i></i>Key added: songs play in full</div><div class="row"><div class="field">AIza&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;</div><div class="btn dark">Test</div></div></div>
+  </div>
+</section></div>
+  <div class="foot"><span class="eyebrow">Mimo &middot; music, everywhere.</span><span class="eyebrow">02 / 03</span></div>
+</div>
+
+<div class="page">
+  <div class="top"><div class="brand"><svg width="28" height="28" viewBox="0 0 512 512"><rect x="9.3" y="9.6" width="493.4" height="492.8" rx="100" fill="none" stroke="var(--ink)" stroke-width="18.6"/><path d="M112.2 128 L118 112.7 L123.9 104.1 L129.7 98.4 L135.6 94.6 L141.4 90.7 L147.3 88.8 L153.1 87.9 L159 86.9 L164.8 86.9 L170.7 87.9 L176.5 88.8 L182.4 90.7 L188.2 94.6 L194.1 97.4 L199.9 100.3 L205.8 104.1 L211.6 107 L217.5 110.8 L223.3 113.7 L229.2 117.5 L235 121.3 L240.9 124.2 L246.7 128 L252.6 130.9 L258.4 134.7 L264.3 137.6 L270.1 141.4 L276 144.2 L281.8 148.1 L287.7 151.9 L293.5 154.7 L299.4 158.6 L305.2 161.4 L311.1 165.3 L317 168.1 L322.8 171.9 L328.7 174.8 L334.5 178.6 L340.4 181.5 L346.2 185.3 L352.1 189.1 L357.9 192 L363.8 195.8 L369.6 198.7 L375.5 202.5 L381.3 205.4 L387.2 209.2 L393 212.1 L398.9 215.9 L404.7 218.7 L410.6 222.6 L416.4 228.3 L422.3 235.9 L428.1 251.2 L428.1 268.4 L422.3 282.7 L416.4 290.4 L410.6 296.1 L404.7 299.9 L398.9 302.8 L393 306.6 L387.2 310.4 L381.3 313.3 L375.5 316.2 L369.6 320 L363.8 323.8 L357.9 326.7 L352.1 330.5 L346.2 333.4 L340.4 337.2 L334.5 340.1 L328.7 343.9 L322.8 346.7 L317 350.6 L311.1 354.4 L305.2 357.3 L299.4 361.1 L293.5 363.9 L287.7 367.8 L281.8 370.6 L276 374.4 L270.1 377.3 L264.3 381.1 L258.4 384 L252.6 387.8 L246.7 390.7 L240.9 394.5 L235 397.4 L229.2 401.2 L223.3 405 L217.5 407.9 L211.6 411.7 L205.8 414.6 L199.9 418.4 L194.1 421.3 L188.2 425.1 L182.4 427.9 L176.5 429.9 L170.7 430.8 L164.8 431.8 L159 431.8 L153.1 430.8 L147.3 429.9 L141.4 427 L135.6 424.1 L129.7 420.3 L123.9 414.6 L118 406 L112.2 389.7Z" fill="var(--ink)"/><path d="M112.2 308.5 L118 302.8 L123.9 294.2 L129.7 284.7 L135.6 274.1 L141.4 261.7 L147.3 249.3 L153.1 237.9 L159 226.4 L164.8 214.9 L170.7 205.4 L176.5 198.7 L182.4 193.9 L188.2 191 L194.1 189.1 L199.9 188.2 L205.8 188.2 L211.6 189.1 L217.5 191 L223.3 194.9 L229.2 199.6 L235 207.3 L240.9 217.8 L246.7 229.3 L252.6 241.7 L258.4 253.1 L264.3 262.7 L270.1 268.4 L276 270.3 L281.8 269.4 L287.7 266.5 L293.5 259.8 L299.4 251.2 L305.2 240.7 L311.1 233.1 L317 227.3 L322.8 223.5 L328.7 221.6 L334.5 221.6 L340.4 222.6 L346.2 225.4 L352.1 231.2 L357.9 238.8 L363.8 250.3 L369.6 262.7 L375.5 275.1 L381.3 287.5 L384.2 293.3 L384.2 295.2 L381.3 294.2 L375.5 293.3 L369.6 289.4 L363.8 285.6 L357.9 279.9 L352.1 274.1 L346.2 270.3 L340.4 268.4 L334.5 267.5 L328.7 269.4 L322.8 273.2 L317 279.9 L311.1 289.4 L305.2 299 L299.4 309.5 L293.5 317.1 L287.7 322.9 L281.8 325.7 L276 327.6 L270.1 327.6 L264.3 327.6 L258.4 324.8 L252.6 321 L246.7 315.2 L240.9 305.7 L235 294.2 L229.2 282.7 L223.3 272.2 L217.5 264.6 L211.6 259.8 L205.8 257 L199.9 257 L194.1 258.9 L188.2 263.6 L182.4 271.3 L176.5 281.8 L170.7 293.3 L164.8 305.7 L159 317.1 L153.1 326.7 L147.3 332.4 L141.4 335.3 L135.6 337.2 L129.7 338.1 L123.9 337.2 L118 335.3 L112.2 332.4Z" fill="var(--paper)"/></svg><b style="font-size:15pt">Mimo</b></div><span class="eyebrow">Good to know</span></div>
+  <div class="ph"><span class="eyebrow">02 / How it runs</span><h2 class="display">Your key, <span class="hl">your quota</span></h2></div>
+  <div class="grid2">
+    <div class="card brut ink">
+      <h3 class="label-cond">The daily quota</h3>
+      <p>Google gives every key <b>10,000 units a day</b>. Finding a song's video costs 100, so that's about <b>99 new songs a day</b>.</p>
+      <div class="meter"><i></i></div>
+      <div class="meter-l"><span>1 new song = 100</span><span>10,000 / day</span></div>
+      <p style="font-size:9.2pt">Songs you've played before are remembered on your phone and cost <b>nothing</b>. The count resets every day at <b>1:30 PM IST</b>.</p>
+    </div>
+    <div class="card brut">
+      <h3 class="label-cond">Keep it safe</h3>
+      <p>Your key stays only on your phone. Mimo <b>never</b> puts it in backups or exports.</p>
+      <p style="margin-top:2.5mm">Don't share it or post it online. If it ever leaks, delete it in Credentials and make a new one. It takes 30 seconds.</p>
+    </div>
+  </div>
+  <h3 class="display sub">If something's off</h3>
+  <div class="trouble brut">
+    <table>
+      <tr><td>"API key not valid"</td><td>Part of the key is missing or has a space. Copy it again with <b>Show key</b>, paste, and tap <b>Show</b> to check.</td></tr>
+      <tr><td>"API not enabled"</td><td>Step 2 was skipped, or another project is selected. Enable it, wait 2&ndash;3 minutes, press <b>Test</b> again.</td></tr>
+      <tr><td>"That's an OAuth client ID"</td><td>You copied the wrong row. Use the row under <b>API keys</b>, not "OAuth 2.0 Client IDs".</td></tr>
+      <tr><td>"Quota exceeded"</td><td>You played 99+ new songs today. Songs you've played before still work; new ones come back after 1:30 PM IST.</td></tr>
+      <tr><td>Still 30-second previews</td><td>The key was tested but not saved. Press <b>Save settings</b>, then play the song again.</td></tr>
+    </table>
+  </div>
+  <div class="end">
+    <span class="eyebrow">That's it</span>
+    <div class="display" style="margin-top:2mm">Now go <span class="hl">press play</span></div>
+  </div>
+  <div class="bigmark" style="opacity:.06"><svg width="300" height="300" viewBox="0 0 512 512"><rect x="9.3" y="9.6" width="493.4" height="492.8" rx="100" fill="none" stroke="var(--ink)" stroke-width="18.6"/><path d="M112.2 128 L118 112.7 L123.9 104.1 L129.7 98.4 L135.6 94.6 L141.4 90.7 L147.3 88.8 L153.1 87.9 L159 86.9 L164.8 86.9 L170.7 87.9 L176.5 88.8 L182.4 90.7 L188.2 94.6 L194.1 97.4 L199.9 100.3 L205.8 104.1 L211.6 107 L217.5 110.8 L223.3 113.7 L229.2 117.5 L235 121.3 L240.9 124.2 L246.7 128 L252.6 130.9 L258.4 134.7 L264.3 137.6 L270.1 141.4 L276 144.2 L281.8 148.1 L287.7 151.9 L293.5 154.7 L299.4 158.6 L305.2 161.4 L311.1 165.3 L317 168.1 L322.8 171.9 L328.7 174.8 L334.5 178.6 L340.4 181.5 L346.2 185.3 L352.1 189.1 L357.9 192 L363.8 195.8 L369.6 198.7 L375.5 202.5 L381.3 205.4 L387.2 209.2 L393 212.1 L398.9 215.9 L404.7 218.7 L410.6 222.6 L416.4 228.3 L422.3 235.9 L428.1 251.2 L428.1 268.4 L422.3 282.7 L416.4 290.4 L410.6 296.1 L404.7 299.9 L398.9 302.8 L393 306.6 L387.2 310.4 L381.3 313.3 L375.5 316.2 L369.6 320 L363.8 323.8 L357.9 326.7 L352.1 330.5 L346.2 333.4 L340.4 337.2 L334.5 340.1 L328.7 343.9 L322.8 346.7 L317 350.6 L311.1 354.4 L305.2 357.3 L299.4 361.1 L293.5 363.9 L287.7 367.8 L281.8 370.6 L276 374.4 L270.1 377.3 L264.3 381.1 L258.4 384 L252.6 387.8 L246.7 390.7 L240.9 394.5 L235 397.4 L229.2 401.2 L223.3 405 L217.5 407.9 L211.6 411.7 L205.8 414.6 L199.9 418.4 L194.1 421.3 L188.2 425.1 L182.4 427.9 L176.5 429.9 L170.7 430.8 L164.8 431.8 L159 431.8 L153.1 430.8 L147.3 429.9 L141.4 427 L135.6 424.1 L129.7 420.3 L123.9 414.6 L118 406 L112.2 389.7Z" fill="var(--ink)"/><path d="M112.2 308.5 L118 302.8 L123.9 294.2 L129.7 284.7 L135.6 274.1 L141.4 261.7 L147.3 249.3 L153.1 237.9 L159 226.4 L164.8 214.9 L170.7 205.4 L176.5 198.7 L182.4 193.9 L188.2 191 L194.1 189.1 L199.9 188.2 L205.8 188.2 L211.6 189.1 L217.5 191 L223.3 194.9 L229.2 199.6 L235 207.3 L240.9 217.8 L246.7 229.3 L252.6 241.7 L258.4 253.1 L264.3 262.7 L270.1 268.4 L276 270.3 L281.8 269.4 L287.7 266.5 L293.5 259.8 L299.4 251.2 L305.2 240.7 L311.1 233.1 L317 227.3 L322.8 223.5 L328.7 221.6 L334.5 221.6 L340.4 222.6 L346.2 225.4 L352.1 231.2 L357.9 238.8 L363.8 250.3 L369.6 262.7 L375.5 275.1 L381.3 287.5 L384.2 293.3 L384.2 295.2 L381.3 294.2 L375.5 293.3 L369.6 289.4 L363.8 285.6 L357.9 279.9 L352.1 274.1 L346.2 270.3 L340.4 268.4 L334.5 267.5 L328.7 269.4 L322.8 273.2 L317 279.9 L311.1 289.4 L305.2 299 L299.4 309.5 L293.5 317.1 L287.7 322.9 L281.8 325.7 L276 327.6 L270.1 327.6 L264.3 327.6 L258.4 324.8 L252.6 321 L246.7 315.2 L240.9 305.7 L235 294.2 L229.2 282.7 L223.3 272.2 L217.5 264.6 L211.6 259.8 L205.8 257 L199.9 257 L194.1 258.9 L188.2 263.6 L182.4 271.3 L176.5 281.8 L170.7 293.3 L164.8 305.7 L159 317.1 L153.1 326.7 L147.3 332.4 L141.4 335.3 L135.6 337.2 L129.7 338.1 L123.9 337.2 L118 335.3 L112.2 332.4Z" fill="var(--paper)"/></svg></div>
+  <div class="foot"><span class="eyebrow">Mimo &middot; music, everywhere.</span><span class="eyebrow">03 / 03</span></div>
+</div>
+</body></html>

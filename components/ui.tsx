@@ -3,10 +3,8 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { getAlbum, topAlbums, type Album } from "@/lib/api";
 import { useData } from "@/lib/useData";
-import { useLibrary } from "@/lib/library";
 import { usePlayer, type Track } from "@/lib/store";
 import { Icon } from "./Icon";
-import { Avatar } from "./Nav";
 import { TrackMenu } from "./TrackRow";
 
 /** Editorial page header: mono kicker, huge Anton title with an optional rust word-block, handwritten note. */
@@ -23,7 +21,6 @@ export function PageHeader({
   note?: string;
   children?: ReactNode;
 }) {
-  const name = useLibrary((s) => s.name);
   return (
     <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
       <div className="min-w-0">
@@ -39,12 +36,8 @@ export function PageHeader({
         </h1>
         {note && <p className="note mt-2 -rotate-1">{note}</p>}
       </div>
-      <div className="flex items-center gap-3">
-        {children}
-        <Link href="/account" aria-label="Account" className="tap md:hidden">
-          <Avatar name={name} />
-        </Link>
-      </div>
+      {/* the account lives in one fixed place: the tab bar on phones, the sidebar on laptops */}
+      {children && <div className="flex items-center gap-3">{children}</div>}
     </header>
   );
 }

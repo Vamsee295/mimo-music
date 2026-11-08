@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 import { useLibrary } from "@/lib/library";
 import { usePlayer } from "@/lib/store";
 import { Icon, type IconName } from "./Icon";
+import { LogoMark } from "./Logo";
+import { initNative } from "@/lib/native";
 
 type Item = readonly [href: string, label: string, icon: IconName];
 
@@ -67,13 +69,31 @@ export function Boot() {
     usePlayer.persist.rehydrate();
     useLibrary.persist.rehydrate();
     (window as { __mimoBooted?: boolean }).__mimoBooted = true;
+    // launch screen: leave once the app is up, but not before its whole sequence has played (~2.6s;
+    // the glint finishes at 2.65s). Reduced motion has nothing to wait for, so it leaves as soon as it can.
+    const minShow = 2650; // the launch animation always plays in full (owner's choice)
+    // Count from when the splash actually started animating, not from navigation start: a slow first load
+    // (dev compile, mobile network) can take longer than minShow, which used to cancel the whole sequence.
+    const intro = document.querySelector(".splash-frame")?.getAnimations()[0];
+    const now = Number(document.timeline.currentTime ?? performance.now());
+    const began = intro?.startTime == null ? now : Number(intro.startTime);
+    let done = 0;
+    const ready = setTimeout(() => {
+      document.documentElement.dataset.ready = "1";
+      // after the 420ms fade, remove the splash from the page (its looping animations would otherwise run on)
+      done = window.setTimeout(() => (document.documentElement.dataset.splashDone = "1"), 600);
+    }, Math.max(0, began + minShow - now));
     // Another tab changed the library (e.g. pasted a YouTube key in Settings) → reload it here too.
     // Without this, this tab's next save (listening time every 10s) would overwrite it with stale data.
     const onStorage = (e: StorageEvent) => {
       if (e.key === "library") useLibrary.persist.rehydrate();
     };
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    return () => {
+      clearTimeout(ready);
+      clearTimeout(done);
+      window.removeEventListener("storage", onStorage);
+    };
   }, []);
   useEffect(() => {
     document.documentElement.style.setProperty("--accent", readableAccent(accent, theme));
@@ -85,12 +105,34 @@ export function Boot() {
     const html = document.documentElement;
     html.classList.toggle("theme-dark", theme === "dark");
     html.classList.toggle("theme-editorial", theme !== "dark");
+    html.dataset.theme = theme; // kept in sync with the pre-paint script in layout.tsx
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "dark" ? "#121110" : "#f5efe6");
   }, [theme]);
   // --sb drives the sidebar width and the desktop player bar's left edge
   useEffect(() => {
     document.documentElement.style.setProperty("--sb", sbWidth(sidebarCollapsed, sidebarWidth));
   }, [sidebarCollapsed, sidebarWidth]);
+  // Android app only (no-op on the web): back button, background state, theme-coloured status bar.
+  // (The "Now playing" notification is driven by PlayerBar, which knows the position and duration.)
+  useEffect(() => {
+    let live = true;
+    let unsub = () => {};
+    initNative().then((app) => {
+      if (!app || !live) return;
+      const syncTheme = () => {
+        const dark = useLibrary.getState().settings.theme === "dark";
+        app.setTheme(dark, dark ? "#121110" : "#f5efe6");
+      };
+      syncTheme();
+      unsub = useLibrary.subscribe((s, prev) => {
+        if (s.settings.theme !== prev.settings.theme) syncTheme();
+      });
+    });
+    return () => {
+      live = false;
+      unsub();
+    };
+  }, []);
   // Ctrl/Cmd + B toggles the sidebar (same shortcut as most desktop apps)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -108,6 +150,7 @@ export function Boot() {
 
 export function Sidebar() {
   const active = useActive();
+  const playing = usePlayer((s) => s.playing && s.index >= 0); // the logo comes alive while music plays
   const name = useLibrary((s) => s.name);
   const { sidebarCollapsed: collapsed, sidebarWidth: width } = useLibrary((s) => s.settings);
   const setSettings = useLibrary((s) => s.setSettings);
@@ -162,9 +205,14 @@ export function Sidebar() {
       className={`relative hidden shrink-0 border-r-[2.4px] border-[var(--line)] bg-paper/70 md:block ${dragging ? "select-none" : "transition-[width] duration-200 ease-out"}`}
     >
       <div className={`no-scrollbar flex h-full flex-col gap-0.5 overflow-y-auto overflow-x-hidden pb-4 pt-4 ${collapsed ? "px-3" : "px-4"}`}>
-        <div className={`mb-5 flex h-9 items-center ${collapsed ? "justify-center" : "justify-between pl-3"}`}>
-          {!collapsed && (
+        <div className={`mb-5 flex items-center ${collapsed ? "flex-col gap-3" : "h-9 justify-between pl-1.5"}`}>
+          {collapsed ? (
+            <Link href="/" aria-label="Mimo home" title="Home">
+              <LogoMark live={playing} className="size-9 text-ink" />
+            </Link>
+          ) : (
             <Link href="/" className="flex items-center gap-2">
+              <LogoMark live={playing} className="size-8 text-ink" />
               <span className="display text-[30px]">Mimo</span>
               <span className="label-cond -rotate-3 rounded-md border-2 border-[var(--ink)] bg-accent px-1.5 text-[11px] leading-[18px] text-paper">free</span>
             </Link>
@@ -239,8 +287,9 @@ export function Avatar({ name, big }: { name: string; big?: boolean }) {
 
 export function TabBar() {
   const active = useActive();
+  const name = useLibrary((s) => s.name);
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t-[2.4px] border-[var(--line)] bg-paper/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-40 [view-transition-name:tabbar] grid grid-cols-5 border-t-[2.4px] border-[var(--line)] bg-paper/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden">
       {tabs.map(([href, label, icon]) => (
         <Link
           key={href}
@@ -251,6 +300,17 @@ export function TabBar() {
           {label}
         </Link>
       ))}
+      {/* "You": the profile, always in the same spot (Apple Music / Spotify keep it fixed too) */}
+      <Link
+        href="/account"
+        aria-label="Account"
+        className={`label-cond flex flex-col items-center gap-0.5 py-2 text-[12px] ${active("/account") || active("/settings") ? "text-accent" : "text-ink/55"}`}
+      >
+        <span className={`rounded-full ${active("/account") || active("/settings") ? "ring-2 ring-accent ring-offset-1 ring-offset-paper" : ""}`}>
+          <Avatar name={name} />
+        </span>
+        You
+      </Link>
     </nav>
   );
 }

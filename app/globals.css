@@ -16,7 +16,10 @@
   --dots: rgb(25 22 20 / 0.09);
   color-scheme: light;
 }
-.theme-dark {
+/* html[data-theme] is set before first paint (layout.tsx) and survives React's hydration of <html>,
+   which resets the class; it outranks .theme-editorial so a dark start never flashes cream */
+.theme-dark,
+html[data-theme="dark"] {
   --paper: #121110;
   --card: #1c1a18;
   --card-2: #26231f;
@@ -207,13 +210,15 @@ main {
   }
 }
 
-.reduce-motion *,
-.reduce-motion *::before {
+/* the launch screen is exempt here too: it always plays (owner's choice) */
+.reduce-motion *:not(.splash, .splash *),
+.reduce-motion *:not(.splash *)::before {
   animation-duration: 1ms !important;
   transition-duration: 1ms !important;
 }
 @media (prefers-reduced-motion: reduce) {
-  * {
+  /* the launch screen is exempt: it always plays (owner's choice); Mimo's own Reduce Motion still stops it */
+  *:not(.splash, .splash *) {
     animation-duration: 1ms !important;
     transition-duration: 1ms !important;
   }
@@ -263,6 +268,14 @@ main {
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation: none; /* chrome (sidebar, player) doesn't change → no whole-screen crossfade */
+}
+/* The sliding page is drawn in the transition layer, above normal content — keep the fixed chrome
+   (tab bar, mini player, desktop player) on top of it so nothing slides over them, like Spotify. */
+::view-transition-group(tabbar),
+::view-transition-group(mini),
+::view-transition-group(player) {
+  z-index: 100;
+  animation: none;
 }
 ::view-transition-old(.page-out) {
   animation: page-out 160ms cubic-bezier(0.3, 0, 0.8, 0.15) both;
@@ -355,4 +368,279 @@ dialog.ask[open]::backdrop {
 }
 .tap-lg::after {
   inset: -14px;
+}
+
+/* ── launch screen (components/Splash.tsx) ──
+   In the theme's own colours (paper background, ink logo + wordmark, rust accents). Every effect is
+   transform / opacity / blur on its own layer, so it runs on the GPU and stays smooth while the app
+   hydrates. It leaves when <Boot> sets html[data-ready] (after the sequence has played, ~2.5s). */
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  background: var(--paper);
+  color: var(--ink);
+  /* safety net: if JavaScript never marks the app ready, don't trap the user behind the logo */
+  animation: splash-out 350ms ease 7s forwards;
+}
+/* View transitions are drawn above the whole page, so while the launch screen shows it gets its own
+   transition layer pinned on top: nothing can slide over it. */
+html:not([data-ready]) .splash {
+  view-transition-name: splash;
+}
+::view-transition-group(splash) {
+  z-index: 1000;
+  animation: none;
+}
+::view-transition-old(splash) {
+  display: none;
+}
+::view-transition-new(splash) {
+  animation: none;
+}
+html[data-ready] .splash {
+  animation: splash-out 420ms ease forwards;
+}
+@keyframes splash-out {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+.splash-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+html[data-ready] .splash-content {
+  animation: splash-content-out 420ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+@keyframes splash-content-out {
+  to {
+    scale: 1.08;
+  }
+}
+
+/* ── the mark ── */
+.splash-logo {
+  position: relative;
+  width: min(30vw, 120px);
+  aspect-ratio: 1;
+  margin-bottom: 24px;
+}
+.splash-pulse {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  animation: splash-breathe 1.8s ease-in-out 2.4s infinite;
+}
+@keyframes splash-breathe {
+  50% {
+    scale: 1.035;
+  }
+}
+.splash-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  will-change: transform, opacity;
+}
+/* 1 · frame settles */
+.splash-frame {
+  animation: splash-frame-in 560ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes splash-frame-in {
+  from {
+    opacity: 0;
+    scale: 0.82;
+  }
+}
+/* 2 · play button turns in */
+.splash-play {
+  transform-origin: 52% 50%;
+  animation: splash-play-in 560ms cubic-bezier(0.16, 1, 0.3, 1) 180ms both;
+}
+@keyframes splash-play-in {
+  from {
+    opacity: 0;
+    scale: 0.5;
+    rotate: -14deg;
+  }
+}
+/* 3 · the wave "M" sweeps across (page-coloured, so it reads as a cut-out) */
+.splash-wave {
+  fill: var(--paper);
+  transform-origin: 21.9% 50%; /* the wave's left end, on the play button's left edge */
+  animation: splash-wave-in 480ms cubic-bezier(0.65, 0, 0.35, 1) 550ms both;
+}
+@keyframes splash-wave-in {
+  from {
+    scale: 0 1;
+  }
+}
+/* 4 · warm glow blooms behind the mark */
+.splash-glow {
+  position: absolute;
+  inset: -55%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in oklab, var(--accent) 30%, transparent), transparent);
+  opacity: 0;
+  animation: splash-glow 1.4s ease-out 0.85s forwards;
+}
+@keyframes splash-glow {
+  0% {
+    opacity: 0;
+    scale: 0.6;
+  }
+  40% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.45;
+    scale: 1.1;
+  }
+}
+/* 7 · rust glint crosses the play button (slides under a fixed play-shaped mask) */
+.splash-glint-clip {
+  overflow: hidden;
+  mask-size: 100% 100%;
+  -webkit-mask-size: 100% 100%;
+}
+.splash-glint {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 35%, color-mix(in oklab, var(--accent) 85%, white 15%) 50%, transparent 65%);
+  translate: -110% 0;
+  animation: splash-glint 850ms ease-in-out 1.8s forwards;
+}
+@keyframes splash-glint {
+  to {
+    translate: 110% 0;
+  }
+}
+
+/* ── 5 · M · I · M · O splash down one by one (Anton, like every page title), a ripple where each lands ── */
+.splash-word {
+  display: flex;
+  align-items: center;
+  font-size: clamp(56px, 15vw, 92px);
+  line-height: 0.95;
+}
+/* …then the rust highlight pill stamps on, like "NEW THIS [WEEK]" */
+.splash-hl {
+  margin-left: 0.18em;
+  animation: splash-stamp 460ms cubic-bezier(0.16, 1, 0.3, 1) 1.5s both;
+}
+@keyframes splash-stamp {
+  from {
+    opacity: 0;
+    scale: 1.9;
+  }
+}
+.splash-letter {
+  position: relative;
+  display: inline-block;
+  animation: splash-land 620ms cubic-bezier(0.16, 1, 0.3, 1) calc(1s + var(--i) * 110ms) both;
+  will-change: transform, opacity; /* own GPU layer from the start: no re-raster mid-animation */
+}
+@keyframes splash-land {
+  0% {
+    opacity: 0;
+    translate: 0 -60%;
+    scale: 1.5;
+  }
+  55% {
+    opacity: 1;
+  }
+  100% {
+    translate: 0 0;
+    scale: 1;
+  }
+}
+.splash-letter::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -2px;
+  width: 120%;
+  height: 12px;
+  translate: -50% 0;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  opacity: 0;
+  animation: splash-ripple 700ms cubic-bezier(0.2, 0, 0, 1) calc(1.2s + var(--i) * 110ms) forwards;
+}
+@keyframes splash-ripple {
+  0% {
+    opacity: 0.9;
+    scale: 0.3;
+  }
+  100% {
+    opacity: 0;
+    scale: 1.7;
+  }
+}
+
+/* ── 6 · the eyebrow types out above the headline (.eyebrow: rust mono caps) ── */
+.splash-tag {
+  margin-bottom: 10px;
+  font-size: 13px;
+  white-space: pre;
+}
+.splash-tag > span {
+  display: inline-block;
+  animation: splash-type 300ms ease calc(0.85s + var(--i) * 26ms) both;
+}
+@keyframes splash-type {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
+}
+
+/* The launch screen always plays its full animation — even with Windows/macOS reduced motion or
+   Mimo's own Reduce Motion on (owner's choice: the opening is part of the brand). */
+
+/* ── logo: "live" while music plays (components/Logo.tsx) ──
+   the play button breathes, the wave "M" sways inside it; same 1.6s beat for both */
+.logo-play,
+.logo-wave {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+}
+.logo-live .logo-play {
+  animation: logo-breathe 1.6s ease-in-out infinite;
+}
+.logo-live .logo-wave {
+  animation: logo-sway 1.6s ease-in-out infinite;
+}
+@keyframes logo-breathe {
+  50% {
+    scale: 1.06;
+  }
+}
+@keyframes logo-sway {
+  50% {
+    translate: 0 -12px;
+    scale: 1 1.18;
+  }
+}
+
+/* ── app in background (Android: screen off / another app on top; see lib/appState.ts) ──
+   The WebView keeps reporting "visible" so music plays on, which means nothing would throttle CSS
+   animations. Freeze the ones that loop forever so the CPU stays free for the audio. Only these few
+   elements — a "*" rule here restyled the whole page at the moment the screen turned off/on, and that
+   hitch starved the hidden player for a beat (a click in the audio). */
+html[data-bg] .logo-live .logo-play,
+html[data-bg] .logo-live .logo-wave,
+html[data-bg] .lyric-dots > span,
+html[data-bg] .animate-pulse {
+  animation-play-state: paused;
+}
+/* the launch screen is done: take it out of the page entirely, so its looping glow/breath stops for good */
+html[data-splash-done] .splash {
+  display: none;
 }

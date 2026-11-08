@@ -52,7 +52,7 @@ function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) =
       aria-checked={on}
       aria-label={label}
       onClick={() => onChange(!on)}
-      className={`relative h-[31px] w-[51px] shrink-0 rounded-full border-2 border-[var(--ink)] transition ${on ? "bg-accent" : "bg-ink/10"}`}
+      className={`tap relative h-[31px] w-[51px] shrink-0 rounded-full border-2 border-[var(--ink)] transition ${on ? "bg-accent" : "bg-ink/10"}`}
     >
       <span className={`absolute top-[1px] size-[25px] rounded-full border-2 border-[var(--ink)] bg-paper transition-all ${on ? "left-[21px]" : "left-[1px]"}`} />
     </button>
@@ -81,6 +81,9 @@ export default function SettingsPage() {
             ))}
           </select>
         </Row>
+        <Row label="Autoplay" hint="When your queue ends, keep playing similar songs">
+          <Toggle label="Autoplay" on={settings.autoplay} onChange={(autoplay) => setSettings({ autoplay })} />
+        </Row>
         <Row label="Allow Explicit Content" hint="Hides songs marked E when off">
           <Toggle label="Allow explicit content" on={settings.explicit} onChange={(explicit) => setSettings({ explicit })} />
         </Row>
@@ -94,13 +97,13 @@ export default function SettingsPage() {
 
       <Group title="Appearance">
         <Row label="Theme" hint="Editorial is the cream paper look; Dark is easier at night">
-          <div className="flex overflow-hidden rounded-lg border-2 border-line">
+          <div className="flex shrink-0 overflow-hidden rounded-lg border-2 border-line">
             {(["editorial", "dark"] as const).map((t) => (
               <button
                 key={t}
                 aria-pressed={settings.theme === t}
                 onClick={() => setSettings({ theme: t })}
-                className={`label-cond px-3 py-1 text-sm ${settings.theme === t ? "bg-ink text-paper" : "text-ink/60 hover:text-ink"}`}
+                className={`tap label-cond px-4 py-1.5 text-sm ${settings.theme === t ? "bg-ink text-paper" : "text-ink/60 hover:text-ink"}`}
               >
                 {t}
               </button>
@@ -115,7 +118,7 @@ export default function SettingsPage() {
                 aria-label={c === "#191614" ? "Accent black" : `Accent ${c}`}
                 aria-pressed={settings.accent === c}
                 onClick={() => setSettings({ accent: c })}
-                className={`size-7 rounded-full border-2 border-ink/25 transition ${settings.accent === c ? "ring-2 ring-ink ring-offset-2 ring-offset-card" : ""}`}
+                className={`tap size-7 rounded-full border-2 border-ink/25 transition ${settings.accent === c ? "ring-2 ring-ink ring-offset-2 ring-offset-card" : ""}`}
                 style={{ background: c }}
               />
             ))}

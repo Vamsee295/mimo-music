@@ -1,9 +1,11 @@
 "use client";
 import Link from "next/link";
+import { ArtistAvatar } from "@/components/ArtistAvatar";
 import { FEATURED, topAlbums, topSongs } from "@/lib/api";
 import { useLibrary } from "@/lib/library";
 import { useData } from "@/lib/useData";
 import { StackHero, Ticker } from "@/components/Hero";
+import { MadeForYou } from "@/components/MadeForYou";
 import { ErrorNote, GenreShelf, Section, Shelf, Skeleton, SongGrid } from "@/components/ui";
 
 export default function Home() {
@@ -29,11 +31,11 @@ export default function Home() {
               href={`/artist?id=${a.id}`}
               className={`brut brut-hover flex w-72 shrink-0 snap-start items-center gap-4 rounded-2xl p-4 ${i % 2 ? "bg-card" : "bg-accent text-paper"}`}
             >
-              <span
-                className={`display grid size-16 shrink-0 place-items-center rounded-full border-[2.4px] border-[var(--ink)] text-[34px] ${i % 2 ? "bg-accent text-paper" : "bg-paper text-ink"}`}
-              >
-                {a.name[0]}
-              </span>
+              <ArtistAvatar
+                name={a.name}
+                className={`size-16 border-[2.4px] border-[var(--ink)] ${i % 2 ? "bg-accent text-paper" : "bg-paper text-ink"}`}
+                textClass="display text-[34px]"
+              />
               <span className="min-w-0">
                 <span className="display block truncate text-[22px]">{a.name}</span>
                 <span className="label-cond block text-[13px] opacity-75">{a.genre} · all songs</span>
@@ -42,6 +44,8 @@ export default function Home() {
           ))}
         </Shelf>
       </Section>
+
+      <MadeForYou />
 
       {history.length > 0 && (
         <Section title="Recently Played" kicker="Your rotation" href="/library?tab=recent" note="on repeat lately ↓">

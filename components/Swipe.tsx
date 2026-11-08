@@ -6,29 +6,37 @@ import { Icon, type IconName } from "./Icon";
 const TRIGGER = 90; // px of drag needed to fire the action
 const START = 10; // px before we decide it's a sideways drag (not a tap or a scroll)
 
+type Action = { label: string; icon: IconName; tone: "ink" | "accent" | "note"; onSwipe: () => void };
+
 /** Drag a row sideways to act on it (Spotify/Apple-style swipe actions). Works with mouse and touch.
- *  Vertical scrolling and taps are left alone: only a clearly horizontal drag engages. */
+ *  Vertical scrolling and taps are left alone: only a clearly horizontal drag engages.
+ *  `dir` + label/icon/tone/onSwipe is the main action; `alt` (optional) is the action for the other direction. */
 export function Swipe({
   dir,
   label,
   icon,
   tone,
   onSwipe,
+  alt,
   children,
 }: {
   dir: "right" | "left";
   label: string;
   icon: IconName;
-  tone: "note" | "accent";
+  tone: "ink" | "accent" | "note";
   onSwipe: () => void;
+  alt?: Action;
   children: ReactNode;
 }) {
+  const main: Action = { label, icon, tone, onSwipe };
+  const mainSign = dir === "right" ? 1 : -1;
   const row = useRef<HTMLDivElement>(null);
-  const g = useRef({ x: 0, y: 0, id: -1, dragging: false, dead: false, dx: 0, armed: false });
+  const g = useRef({ x: 0, y: 0, id: -1, dragging: false, dead: false, dx: 0, armed: false, sign: 1 });
   const justDragged = useRef(false);
   const [armed, setArmed] = useState(false);
   const [active, setActive] = useState(false);
-  const sign = dir === "right" ? 1 : -1;
+  const [sign, setSign] = useState(mainSign); // direction of the drag in progress → which action shows
+  const action = sign === mainSign ? main : (alt ?? main);
 
   const move = (dx: number, animate: boolean) => {
     const el = row.current;
@@ -43,9 +51,10 @@ export function Swipe({
       justDragged.current = true; // swallow the click that follows the drag
       setTimeout(() => (justDragged.current = false), 0);
       if (s.armed) {
-        move(sign * (row.current?.offsetWidth ?? 400), true); // fly out…
+        const fire = s.sign === mainSign ? main.onSwipe : (alt ?? main).onSwipe;
+        move(s.sign * (row.current?.offsetWidth ?? 400), true); // fly out…
         setTimeout(() => {
-          onSwipe();
+          fire();
           move(0, false); // …then snap home for the next swipe
           setActive(false);
           setArmed(false);
@@ -66,12 +75,12 @@ export function Swipe({
       {/* action revealed behind the row */}
       <div
         aria-hidden
-        className={`absolute inset-0 flex items-center gap-2 px-5 transition-colors ${dir === "right" ? "justify-start" : "justify-end"} ${
-          active ? (armed ? (tone === "note" ? "bg-note text-paper" : "bg-accent text-paper") : "bg-ink/10 text-ink/60") : "opacity-0"
+        className={`absolute inset-0 flex items-center gap-2 px-5 transition-colors ${sign === 1 ? "justify-start" : "justify-end"} ${
+          active ? (action.tone !== "ink" ? (armed ? "bg-accent text-white" : "bg-accent/25 text-ink/70") : armed ? "bg-ink/20 text-accent" : "bg-ink/[0.07] text-ink/50") : "opacity-0"
         }`}
       >
-        <Icon name={icon} className={`size-5 transition-transform ${armed ? "scale-125" : ""}`} />
-        <span className="label-cond text-[15px]">{label}</span>
+        <Icon name={action.icon} className={`size-5 transition-transform ${armed ? "scale-125" : ""}`} />
+        <span className="label-cond text-[15px]">{action.label}</span>
       </div>
 
       <div
@@ -79,7 +88,7 @@ export function Swipe({
         className="relative touch-pan-y bg-paper"
         onPointerDown={(e) => {
           if (e.button !== 0) return;
-          g.current = { x: e.clientX, y: e.clientY, id: e.pointerId, dragging: false, dead: false, dx: 0, armed: false };
+          g.current = { x: e.clientX, y: e.clientY, id: e.pointerId, dragging: false, dead: false, dx: 0, armed: false, sign: mainSign };
         }}
         onPointerMove={(e) => {
           const s = g.current;
@@ -88,7 +97,11 @@ export function Swipe({
           const dy = e.clientY - s.y;
           if (!s.dragging) {
             if (Math.abs(dy) > START && Math.abs(dy) > Math.abs(dx)) return void (s.dead = true); // a scroll
-            if (Math.abs(dx) < START || Math.sign(dx) !== sign) return;
+            if (Math.abs(dx) < START) return;
+            const d = Math.sign(dx);
+            if (d !== mainSign && !alt) return; // only one action, and this is the other way
+            s.sign = d;
+            setSign(d);
             s.dragging = true;
             setActive(true);
             // keep getting moves if the pointer leaves the row; can throw if the pointer already ended
@@ -98,9 +111,9 @@ export function Swipe({
             } catch {}
           }
           // follow the finger in the allowed direction; resist past the trigger point
-          const d = Math.max(0, dx * sign);
+          const d = Math.max(0, dx * s.sign);
           const shown = d <= TRIGGER ? d : TRIGGER + (d - TRIGGER) * 0.35;
-          s.dx = shown * sign;
+          s.dx = shown * s.sign;
           move(s.dx, false);
           const now = d >= TRIGGER;
           if (now !== s.armed) {
@@ -143,7 +156,7 @@ export function Toaster() {
       key={n}
       role="status"
       onAnimationEnd={() => setHidden(n)}
-      className="toast brut label-cond pointer-events-none fixed left-1/2 top-4 z-[70] -translate-x-1/2 rounded-full bg-ink px-5 py-2 text-[15px] text-paper"
+      className="toast brut label-cond pointer-events-none fixed left-1/2 top-[calc(1rem+env(safe-area-inset-top))] z-[70] max-w-[90vw] truncate rounded-full bg-ink px-5 py-2 text-[15px] text-paper"
     >
       {msg}
     </div>

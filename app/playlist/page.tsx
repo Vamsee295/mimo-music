@@ -13,13 +13,14 @@ import { PlaylistCover } from "@/components/LibraryGrid";
 import { btnSecondary, PlayShuffle } from "@/components/ui";
 
 export default function PlaylistPage() {
-  const id = useSearchParams().get("id") ?? "";
+  const params = useSearchParams();
+  const id = params.get("id") ?? "";
   const router = useRouter();
   const p = useLibrary((s) => s.playlists.find((x) => x.id === id));
   const { deletePlaylist, removeFromPlaylist } = useLibrary.getState();
   // a new, empty playlist opens with the song finder; it stays open while you add
   const [adding, setAdding] = useState(() => !useLibrary.getState().playlists.find((x) => x.id === id)?.tracks.length);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(() => params.get("edit") === "1"); // Library menu → "Edit details"
 
   if (!p) return <p className="text-ink/50">Playlist not found.</p>;
   const minutes = Math.round(p.tracks.reduce((n, t) => n + t.duration, 0) / 60);

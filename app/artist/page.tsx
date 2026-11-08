@@ -1,5 +1,6 @@
 "use client";
 import { useSearchParams } from "next/navigation";
+import { ArtistAvatar } from "@/components/ArtistAvatar";
 import { useState } from "react";
 import { getArtist, getDiscography } from "@/lib/api";
 import { useData } from "@/lib/useData";
@@ -20,13 +21,14 @@ export default function ArtistPage() {
   return (
     <>
       {/* no artist photos in the free API → hero built from their latest artwork */}
-      <div className="theme-dark relative -mx-4 -mt-5 mb-10 h-80 overflow-hidden border-b-[2.4px] border-[var(--ink)] bg-paper text-ink md:-mx-8 md:-mt-8 md:h-96">
+      <div className="theme-dark relative -mx-4 -mt-5 mb-10 flex min-h-80 flex-col justify-end overflow-hidden border-b-[2.4px] border-[var(--ink)] bg-paper text-ink md:-mx-8 md:-mt-8 md:min-h-96">
         {cover && <img src={cover} alt="" className="absolute inset-0 size-full scale-110 object-cover blur-xl brightness-50" />}
         <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
-        <div className="absolute inset-x-4 bottom-6 flex flex-wrap items-end justify-between gap-4 md:inset-x-8">
+        <div className="relative mx-4 mb-6 mt-16 flex flex-wrap items-end justify-between gap-4 md:mx-8">
           <div>
+            <ArtistAvatar name={artist.name} className="mb-4 size-24 border-[2.4px] border-[var(--ink)] bg-accent text-paper shadow-[4px_5px_0_var(--hard)] md:size-32" textClass="display text-5xl" />
             <p className="eyebrow mb-2">{artist.genre} · artist</p>
-            <h1 className="display break-words text-[clamp(34px,11vw,52px)] md:text-[96px]"><span className="hl">{artist.name}</span></h1>
+            <h1 className="display break-words text-[clamp(34px,11vw,52px)] md:text-[clamp(56px,6.5vw,96px)]"><span className="hl">{artist.name}</span></h1>
           </div>
           <PlayShuffle tracks={songs} />
         </div>

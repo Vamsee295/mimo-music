@@ -1,9 +1,14 @@
 "use client";
 import Link from "next/link";
+import { useRef } from "react";
 import { monthKey, useLibrary, type MonthStats } from "@/lib/library";
 import { Avatar } from "@/components/Nav";
 import { Icon } from "@/components/Icon";
 import { PageHeader } from "@/components/ui";
+import { askConfirm } from "@/components/Ask";
+import { toast } from "@/components/Swipe";
+import { makeBackup, readBackup } from "@/lib/backup";
+import { saveTextFile } from "@/lib/native";
 
 export default function AccountPage() {
   const lib = useLibrary();
@@ -12,16 +17,22 @@ export default function AccountPage() {
     .slice(0, 5);
   const max = top[0]?.[1] ?? 1;
 
-  const exportLibrary = () => {
-    const { name, liked, albums, playlists, history, listening } = lib;
-    // never put the API key in a file people share
-    const settings = Object.fromEntries(Object.entries(lib.settings).filter(([k]) => k !== "ytKey"));
-    const blob = new Blob([JSON.stringify({ name, liked, albums, playlists, history, settings, listening }, null, 2)], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "mimo-library.json";
-    a.click();
-    URL.revokeObjectURL(a.href);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  // backup = the whole library minus the YouTube key (see lib/backup.ts)
+  const exportLibrary = () => saveTextFile(`mimo-library-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(makeBackup(lib), null, 2));
+
+  const importLibrary = async (file: File) => {
+    try {
+      const data = readBackup(await file.text());
+      const count = `${data.liked.length} loved, ${data.songs.length} library songs, ${data.playlists.length} playlists`;
+      if (!(await askConfirm(`Replace your library with this backup? (${count})`, "Replace"))) return;
+      // keep this device's YouTube key; everything else comes from the backup
+      useLibrary.setState((s) => ({ ...data, settings: { ...s.settings, ...data.settings, ytKey: s.settings.ytKey } }));
+      toast("Library restored");
+    } catch (e) {
+      toast((e as Error).message);
+    }
   };
 
   const stats = [
@@ -86,8 +97,30 @@ export default function AccountPage() {
           Settings <Icon name="right" className="size-5 text-ink/30" />
         </Link>
         <button onClick={exportLibrary} className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-ink/5">
-          Export my library (JSON) <Icon name="right" className="size-5 text-ink/30" />
+          <span>
+            Back up my library
+            <span className="block text-xs text-ink/45">Saves a file with your songs, playlists and stats</span>
+          </span>
+          <Icon name="right" className="size-5 text-ink/30" />
         </button>
+        <button onClick={() => fileInput.current?.click()} className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-ink/5">
+          <span>
+            Restore from a backup
+            <span className="block text-xs text-ink/45">New phone, reinstall or cleared storage</span>
+          </span>
+          <Icon name="upload" className="size-5 text-ink/30" />
+        </button>
+        <input
+          ref={fileInput}
+          type="file"
+          accept="application/json,.json"
+          className="sr-only"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = ""; // so picking the same file again still fires
+            if (f) importLibrary(f);
+          }}
+        />
       </div>
     </div>
   );

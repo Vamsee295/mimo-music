@@ -29,25 +29,57 @@ export function parseLrc(lrc: string): LyricLine[] {
   return out.sort((a, b) => a.t - b.t);
 }
 
-type LrcRow = { trackName: string; artistName: string; duration: number; instrumental: boolean; plainLyrics: string | null; syncedLyrics: string | null };
+export type LrcRow = { trackName: string; artistName: string; duration: number; instrumental: boolean; plainLyrics: string | null; syncedLyrics: string | null };
 
+/** Pure: the best LRCLIB row for a song, or null. Synced lyrics whose length matches (±4s) win; with
+ *  `strict`, a row of a different length is never accepted (a title-only search finds other songs too). */
+export function pickLyrics(rows: LrcRow[], seconds: number, strict = false): LrcRow | null {
+  const near = (x: LrcRow) => Math.abs(x.duration - seconds) <= 4;
+  const ok = strict ? rows.filter(near) : rows;
+  return ok.find((x) => near(x) && x.syncedLyrics) ?? ok.find((x) => x.syncedLyrics) ?? ok.find((x) => x.plainLyrics || x.instrumental) ?? null;
+}
+
+const lrclib = async (path: string, params: Record<string, string>) => {
+  const r = await fetch(`https://lrclib.net/api/${path}?${new URLSearchParams(params)}`);
+  if (r.status === 404) return [];
+  if (!r.ok) throw new Error(`lrclib ${r.status}`);
+  const j = (await r.json()) as LrcRow | LrcRow[];
+  return Array.isArray(j) ? j : [j];
+};
+
+/** Lyrics from LRCLIB, trying progressively looser lookups until one has them:
+ *  1. title + artist search   2. exact signature (title, artist, album, length)
+ *  3. free-text search        4. title only — but only a row of the same length (else it's another song). */
 export function getLyrics(t: Track): Promise<Lyrics | null> {
   return once(`lyrics:${t.id}`, async () => {
-    const q = new URLSearchParams({ track_name: cleanTitle(t.title), artist_name: firstArtist(t.artist) });
-    const r = await fetch(`https://lrclib.net/api/search?${q}`);
-    if (!r.ok) throw new Error(`lrclib ${r.status}`);
-    const rows = (await r.json()) as LrcRow[];
-    if (!rows.length) return null;
-    // prefer synced lyrics whose length is within 4s of the real song
-    const near = (x: LrcRow) => Math.abs(x.duration - t.duration) <= 4;
-    const best = rows.find((x) => near(x) && x.syncedLyrics) ?? rows.find((x) => x.syncedLyrics) ?? rows[0];
-    return {
-      synced: best.syncedLyrics ? parseLrc(best.syncedLyrics) : null,
-      plain: best.plainLyrics,
-      instrumental: best.instrumental,
-    };
+    const title = cleanTitle(t.title);
+    const artist = firstArtist(t.artist);
+    const tries: [() => Promise<LrcRow[]>, boolean][] = [
+      [() => lrclib("search", { track_name: title, artist_name: artist }), false],
+      [() => lrclib("get", { track_name: title, artist_name: artist, album_name: cleanTitle(t.album), duration: String(Math.round(t.duration)) }), false],
+      [() => lrclib("search", { q: `${title} ${artist}` }), true],
+      [() => lrclib("search", { track_name: title }), true],
+    ];
+    let fallback: LrcRow | null = null; // plain (unsynced) lyrics, used if nothing synced turns up
+    let failed = 0;
+    for (const [lookup, strict] of tries) {
+      // one lookup failing just moves on to the next
+      const rows = await lookup().catch(() => (failed++, [] as LrcRow[]));
+      const best = pickLyrics(rows, t.duration, strict);
+      if (best?.syncedLyrics || best?.instrumental) return toLyrics(best);
+      fallback ??= best;
+    }
+    // every lookup failed (offline): throw, so the cache forgets it and a later play tries again
+    if (failed === tries.length) throw new Error("lrclib unreachable");
+    return fallback ? toLyrics(fallback) : null;
   });
 }
+
+const toLyrics = (row: LrcRow): Lyrics => ({
+  synced: row.syncedLyrics ? parseLrc(row.syncedLyrics) : null,
+  plain: row.plainLyrics,
+  instrumental: row.instrumental,
+});
 
 export function getBio(artist: string): Promise<Bio | null> {
   const name = firstArtist(artist);
@@ -68,4 +100,12 @@ export function getBio(artist: string): Promise<Bio | null> {
     if (!j.extract || j.type === "disambiguation") return null;
     return { title: j.title, extract: j.extract, image: j.thumbnail?.source, url: j.content_urls?.desktop?.page ?? `https://en.wikipedia.org/wiki/${title}` };
   });
+}
+
+/** A photo of the artist, from their Wikipedia page — only when that page is clearly about a musician
+ *  (a same-named actor or place would put the wrong face on the artist). null → show the monogram. */
+export async function artistPhoto(artist: string): Promise<string | null> {
+  const bio = await getBio(artist).catch(() => null);
+  if (!bio?.image) return null;
+  return /\b(singer|composer|musician|rapper|band|songwriter|vocalist|music director|playback|producer|DJ|duo|group)\b/i.test(bio.extract) ? bio.image : null;
 }

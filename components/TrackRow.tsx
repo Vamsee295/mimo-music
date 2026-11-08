@@ -183,9 +183,14 @@ export function TrackList({
   album,
   onRemove,
   removeLabel,
+  single,
+  onPick,
 }: {
   tracks: Track[];
   album?: boolean;
+  /** Search results: play just the tapped song (Autoplay lines up related ones), not every match */
+  single?: boolean;
+  onPick?: (t: Track) => void;
   onRemove?: (i: number) => void;
   removeLabel?: string;
 }) {
@@ -198,7 +203,7 @@ export function TrackList({
           track={t}
           n={t.n ?? i + 1}
           album={album}
-          onPlay={() => playList(tracks, i)}
+          onPlay={() => (onPick?.(t), single ? playList([t], 0) : playList(tracks, i))}
           onRemove={onRemove && (() => onRemove(i))}
           removeLabel={removeLabel}
         />
