@@ -48,6 +48,8 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Wi-Fi or mobile data? picks the audio quality (MimoMediaPlugin.audioUrl) -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- background playback: a media foreground service with its notification, CPU kept awake while playing -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />

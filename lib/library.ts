@@ -55,6 +55,8 @@ type State = {
   pinned: string[];
   /** artists removed from the Library's Artists list (it's built from your saved songs otherwise) */
   hiddenArtists: string[];
+  /** songs downloaded into the app (Android), newest first; the files live in the app (lib/downloads.ts) */
+  downloads: Track[];
 };
 
 type Actions = {
@@ -77,6 +79,7 @@ type Actions = {
   removeRecent: (key: string) => void;
   clearRecents: () => void;
   resetAll: () => void;
+  setDownloaded: (t: Track, on: boolean) => void;
 };
 
 const initial: State = {
@@ -91,6 +94,7 @@ const initial: State = {
   listening: {},
   pinned: [],
   hiddenArtists: [],
+  downloads: [],
   settings: { theme: "editorial", country: "in", accent: "#c8603a", explicit: true, reduceMotion: false, autoplay: true, dataSaver: true, ytKey: "", sidebarWidth: 240, sidebarCollapsed: false },
 };
 
@@ -160,6 +164,9 @@ export const useLibrary = create<State & Actions>()(
           };
         }),
       resetAll: () => set(initial),
+
+      setDownloaded: (t, on) =>
+        set((s) => ({ downloads: on ? [t, ...s.downloads.filter((x) => x.id !== t.id)] : s.downloads.filter((x) => x.id !== t.id) })),
     }),
     {
       name: "library",

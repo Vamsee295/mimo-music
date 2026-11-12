@@ -67,10 +67,29 @@ export type MediaInfo = {
   position: number; // seconds
   playing: boolean;
 };
-export type MediaAction = { type: "play" | "pause" | "next" | "prev" | "seek"; position?: number };
+// play/pause/next/prev/seek: notification, lock screen, headset · time/ended/error: the native audio engine
+export type MediaAction = {
+  type: "play" | "pause" | "next" | "prev" | "seek" | "time" | "ended" | "error";
+  position?: number;
+  duration?: number;
+  key?: string; // "time": which stream it's about
+};
+/** A song's audio-only stream: its (short-lived) URL + a stable name for that exact file (disk cache). */
+export type Stream = { url: string; key: string };
 type MimoMediaPlugin = {
   update(info: MediaInfo): Promise<void>;
   stop(): Promise<void>;
+  audioUrl(o: { videoId: string; best?: boolean }): Promise<Stream>;
+  download(o: { url: string; trackId: string }): Promise<{ url: string; bytes: number }>;
+  downloaded(o: { trackId: string }): Promise<{ url?: string }>;
+  deleteDownload(o: { trackId: string }): Promise<void>;
+  deleteAllDownloads(): Promise<void>;
+  play(o: Stream & { position: number; playing: boolean }): Promise<void>;
+  setNext(o: Partial<Stream>): Promise<void>;
+  setPlaying(o: { playing: boolean }): Promise<void>;
+  seek(o: { position: number }): Promise<void>;
+  setVolume(o: { volume: number }): Promise<void>;
+  unload(): Promise<void>;
   addListener(event: "action", fn: (a: MediaAction) => void): Promise<PluginListenerHandle>;
 };
 const MimoMedia = registerPlugin<MimoMediaPlugin>("MimoMedia");
@@ -88,3 +107,65 @@ export const nativeMedia = () =>
         onAction: (fn: (a: MediaAction) => void) => MimoMedia.addListener("action", fn),
       }
     : null;
+
+// video id -> stream, remembered for an hour (YouTube's URLs live ~6h): the song is looked up while the one
+// before it still plays, so the change-over itself needs no network call
+const streams = new Map<string, { s: Stream; at: number }>();
+
+/** Android: the song's audio-only stream (no video), from MimoMediaPlugin.audioUrl. Throws if YouTube won't
+ *  give one. `fresh` skips the remembered one (it just failed). The website uses /api/audio instead. */
+export async function youtubeAudio(videoId: string, fresh = false): Promise<Stream> {
+  const hit = streams.get(videoId);
+  if (!fresh && hit && Date.now() - hit.at < 3600_000) return hit.s;
+  const s = await MimoMedia.audioUrl({ videoId });
+  streams.set(videoId, { s, at: Date.now() });
+  return s;
+}
+
+const quiet = (p: Promise<void>) => void p.catch(() => {});
+/** Android's native audio engine (ExoPlayer in MimoMediaPlugin): streams play there, not in the page, so
+ *  the phone can't slow them down with the screen off. Every call is a no-op on the website. */
+export const engine = {
+  play: (s: Stream, position: number, playing: boolean) => isNative() && quiet(MimoMedia.play({ ...s, position, playing })),
+  /** preload the song after this one (gapless); nothing = clear it */
+  setNext: (s?: Stream) => isNative() && quiet(MimoMedia.setNext(s ?? {})),
+  setPlaying: (playing: boolean) => isNative() && quiet(MimoMedia.setPlaying({ playing })),
+  seek: (position: number) => isNative() && quiet(MimoMedia.seek({ position })),
+  setVolume: (volume: number) => isNative() && quiet(MimoMedia.setVolume({ volume })),
+  unload: () => isNative() && quiet(MimoMedia.unload()),
+};
+
+// ── Downloads (Android): songs saved inside the app, played with no network (MimoMediaPlugin) ──
+/** The downloaded song as a playable stream, or null (not downloaded, or the website). */
+export async function offlineStream(trackId: string): Promise<Stream | null> {
+  if (!isNative()) return null;
+  const { url } = await MimoMedia.downloaded({ trackId }).catch(() => ({ url: undefined }));
+  return url ? { url, key: `dl:${trackId}` } : null;
+}
+
+/** Download a song's audio (best quality) inside the app. Returns its size in bytes. */
+export async function downloadAudio(videoId: string, trackId: string): Promise<number> {
+  const { url } = await MimoMedia.audioUrl({ videoId, best: true });
+  return (await MimoMedia.download({ url, trackId })).bytes;
+}
+
+export const deleteDownload = (trackId: string) => isNative() && void MimoMedia.deleteDownload({ trackId }).catch(() => {});
+export const deleteAllDownloads = () => isNative() && void MimoMedia.deleteAllDownloads().catch(() => {});
+
+/** Android: a Your Music file as a native-engine stream. Copied once from the app's song store (IndexedDB) into
+ *  the app's own files, where ExoPlayer can read it; later plays reuse the copy. null on the website. */
+export async function nativeLocalCopy(trackId: string, blob: Blob): Promise<Stream | null> {
+  if (!isNative()) return null;
+  const have = await offlineStream(trackId);
+  if (have) return have;
+  const { Filesystem, Directory } = await import("@capacitor/filesystem");
+  const data = await new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1] ?? "");
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+  // same folder + name MimoMediaPlugin uses for downloads: files/downloads/<id with ":" as "_">.audio
+  await Filesystem.writeFile({ path: `downloads/${trackId.replace(/:/g, "_")}.audio`, data, directory: Directory.Data, recursive: true });
+  return offlineStream(trackId);
+}

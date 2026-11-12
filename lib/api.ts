@@ -93,7 +93,8 @@ async function fetchJson(url: string, retries = [2000, 6000]): Promise<unknown> 
       if (r.status < 200 || r.status >= 300) throw new Error(`${r.status}`);
       return typeof r.data === "string" ? JSON.parse(r.data) : r.data;
     }
-    const r = await fetch(url);
+    // retries skip the browser's HTTP cache: a rate-limited reply can get cached, and re-reading it fails instantly
+    const r = await fetch(url, retries.length < 2 ? { cache: "reload" } : undefined);
     if (!r.ok) throw new Error(`${r.status}`);
     return await r.json();
   } catch (e) {

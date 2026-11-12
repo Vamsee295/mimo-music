@@ -3,6 +3,7 @@
 // when the app goes to the background (lib/native.ts → setBackground), so decorative work checks this.
 // On the web the browser's own tab throttling already handles hidden tabs; this stays false.
 import { useSyncExternalStore } from "react";
+import { usePlayer } from "./store";
 
 let background = false;
 const listeners = new Set<() => void>();
@@ -22,8 +23,10 @@ export function setBackground(v: boolean) {
 function apply(v: boolean) {
   if (background === v) return;
   background = v;
-  // CSS pauses every animation while this is set (globals.css, "app in background")
-  document.documentElement.toggleAttribute("data-bg", v);
+  // CSS pauses every animation while this is set (globals.css, "app in background"). Not while music plays:
+  // a page-wide restyle right as the screen changes is extra work that can make the audio stumble. (Frame
+  // loops and timers still stop: they read isBackground() / useForeground().) Cleared again either way.
+  if (!v || !usePlayer.getState().playing) document.documentElement.toggleAttribute("data-bg", v);
   listeners.forEach((f) => f());
 }
 

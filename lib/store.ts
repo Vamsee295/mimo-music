@@ -31,6 +31,13 @@ type State = {
   volume: number;
   sleepAt: number | null; // epoch ms when playback pauses (sleep timer)
   sleepAfterTrack: boolean; // pause when the current song ends
+  /** How many songs right after the current one YOU queued (Play Next / Add to Queue). They play before the
+   *  rest of the album/playlist and before Autoplay's picks, in the order you added them — like Spotify's
+   *  "Next in queue". */
+  manual: number;
+  /** Goes up every time a song is started. The player reloads on this, not on the queue position: removing
+   *  or dragging other songs shifts positions and must not restart what's playing. */
+  turn: number;
 };
 
 type Actions = {
@@ -71,6 +78,8 @@ export const usePlayer = create<State & Actions>()(
       volume: 0.8,
       sleepAt: null,
       sleepAfterTrack: false,
+      manual: 0,
+      turn: 0,
 
       playList: (tracks, start, shuffle) => {
         if (!tracks.length) return;
@@ -81,21 +90,26 @@ export const usePlayer = create<State & Actions>()(
         const rest = tracks.filter((_, i) => i !== start);
         // shuffle on = keep clicked song first, shuffle the remainder
         const queue = get().shuffle ? [first, ...shuffled(rest)] : tracks;
-        set({ queue, index: get().shuffle ? 0 : start, playing: true });
+        set({ queue, index: get().shuffle ? 0 : start, playing: true, manual: 0, turn: get().turn + 1 });
       },
 
+      // Play Next: straight after the current song
       playNext: (t) => {
-        const { queue, index } = get();
-        if (index < 0) return set({ queue: [t], index: 0, playing: true });
+        const { queue, index, manual, turn } = get();
+        if (index < 0) return set({ queue: [t], index: 0, playing: true, manual: 0, turn: turn + 1 });
         const q = [...queue];
         q.splice(index + 1, 0, t);
-        set({ queue: q });
+        set({ queue: q, manual: manual + 1 });
       },
 
+      // Add to Queue: after the songs you already queued, but before the rest of the album / Autoplay's picks.
+      // (It used to go to the very end — behind 10 Autoplay songs — so it looked like nothing was added.)
       addToQueue: (t) => {
-        const { queue, index } = get();
-        if (index < 0) return set({ queue: [t], index: 0, playing: true });
-        set({ queue: [...queue, t] });
+        const { queue, index, manual, turn } = get();
+        if (index < 0) return set({ queue: [t], index: 0, playing: true, manual: 0, turn: turn + 1 });
+        const q = [...queue];
+        q.splice(index + 1 + manual, 0, t);
+        set({ queue: q, manual: manual + 1 });
       },
 
       appendMany: (ts) => {
@@ -103,36 +117,45 @@ export const usePlayer = create<State & Actions>()(
       },
 
       removeAt: (i) => {
-        const { queue, index } = get();
+        const { queue, index, manual } = get();
         if (i === index) return; // can't remove what's playing
-        set({ queue: queue.filter((_, j) => j !== i), index: i < index ? index - 1 : index });
+        const mine = i > index && i <= index + manual;
+        set({ queue: queue.filter((_, j) => j !== i), index: i < index ? index - 1 : index, manual: manual - Number(mine) });
       },
 
       move: (from, to) => {
-        const { queue, index } = get();
+        const { queue, index, manual } = get();
+        if (from === to || !queue[from] || to < 0 || to >= queue.length) return;
         const q = [...queue];
         const [t] = q.splice(from, 1);
         q.splice(to, 0, t);
-        const cur = queue[index];
-        set({ queue: q, index: q.indexOf(cur) });
+        // by position, not by looking the song up: the same song can be in the queue twice
+        const ni = from === index ? to : from < index && to >= index ? index - 1 : from > index && to <= index ? index + 1 : index;
+        // dragging a song into (or out of) your queued block makes it yours (or not)
+        let m = manual - Number(from > index && from <= index + manual);
+        if (from !== index && to > ni && to <= ni + m + 1) m++;
+        set({ queue: q, index: ni, manual: Math.max(0, Math.min(m, q.length - 1 - ni)) });
       },
 
-      jumpTo: (i) => set({ index: i, playing: true }),
+      jumpTo: (i) => {
+        const { index, manual, turn } = get();
+        set({ index: i, playing: true, manual: i > index ? Math.max(0, manual - (i - index)) : 0, turn: turn + 1 });
+      },
 
       clearUpcoming: () => {
         const { queue, index } = get();
-        set({ queue: queue.slice(0, index + 1) });
+        set({ queue: queue.slice(0, index + 1), manual: 0 });
       },
 
       next: (auto = false) => {
-        const { queue, index, repeat, sleepAfterTrack } = get();
+        const { queue, index, repeat, sleepAfterTrack, manual, turn } = get();
         if (auto && sleepAfterTrack) return set({ playing: false, sleepAfterTrack: false });
-        if (index < queue.length - 1) return set({ index: index + 1, playing: true });
-        if (repeat === "all" || !auto) return set({ index: 0, playing: auto ? true : get().playing });
+        if (index < queue.length - 1) return set({ index: index + 1, playing: true, manual: Math.max(0, manual - 1), turn: turn + 1 });
+        if (repeat === "all" || !auto) return set({ index: 0, playing: auto ? true : get().playing, manual: 0, turn: turn + 1 });
         set({ playing: false });
       },
 
-      prev: () => set((s) => ({ index: Math.max(0, s.index - 1) })),
+      prev: () => set((s) => (s.index > 0 ? { index: s.index - 1, manual: s.manual + 1, turn: s.turn + 1 } : {})),
 
       setPlaying: (playing) => set({ playing }),
 
@@ -140,7 +163,8 @@ export const usePlayer = create<State & Actions>()(
         const { shuffle, queue, index } = get();
         if (!shuffle && index >= 0) {
           // shuffle only what's upcoming, like Spotify
-          set({ queue: [...queue.slice(0, index + 1), ...shuffled(queue.slice(index + 1))] });
+          const keep = index + 1 + get().manual; // the songs you queued keep their order
+          set({ queue: [...queue.slice(0, keep), ...shuffled(queue.slice(keep))] });
         }
         set({ shuffle: !shuffle });
       },

@@ -7,6 +7,7 @@ import { Icon } from "./Icon";
 import { Explicit } from "./ui";
 import { Swipe, toast } from "./Swipe";
 import { askText } from "./Ask";
+import { canDownload, download, removeDownload, useDownloading } from "@/lib/downloads";
 
 export const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
@@ -16,6 +17,8 @@ export function TrackMenu({ track, onRemove, removeLabel = "Remove from Playlist
   const liked = useLibrary((s) => s.liked.some((t) => t.id === track.id));
   const saved = useLibrary((s) => s.songs.some((t) => t.id === track.id));
   const playlists = useLibrary((s) => s.playlists);
+  const isDownloaded = useLibrary((s) => s.downloads.some((t) => t.id === track.id));
+  const downloading = useDownloading(track.id);
   const close = () => setOpen(false);
   const act = (fn: () => void) => () => (fn(), close());
   const item = "flex w-full items-center gap-3 px-4 py-3 text-left font-medium hover:bg-accent hover:text-paper md:py-2";
@@ -38,8 +41,8 @@ export function TrackMenu({ track, onRemove, removeLabel = "Remove from Playlist
             </div>
             {open === "main" ? (
               <>
-                <button className={item} onClick={act(() => usePlayer.getState().playNext(track))}>Play Next</button>
-                <button className={item} onClick={act(() => usePlayer.getState().addToQueue(track))}>Play Last</button>
+                <button className={item} onClick={act(() => (usePlayer.getState().playNext(track), toast(`“${track.title}” plays next`)))}>Play Next</button>
+                <button className={item} onClick={act(() => (usePlayer.getState().addToQueue(track), toast(`Added “${track.title}” to queue`)))}>Add to Queue</button>
                 <button
                   className={item}
                   onClick={act(() => {
@@ -57,6 +60,23 @@ export function TrackMenu({ track, onRemove, removeLabel = "Remove from Playlist
                 <button className={item} onClick={() => setOpen("playlists")}>
                   Add to Playlist <Icon name="right" className="ml-auto size-4" />
                 </button>
+                {canDownload() && (
+                  <button
+                    className={item}
+                    disabled={downloading}
+                    onClick={act(() => {
+                      if (isDownloaded) return void (removeDownload(track), toast("Download removed"));
+                      toast(`Downloading “${track.title}”…`);
+                      download(track).then(
+                        () => toast(`Downloaded “${track.title}” — plays offline`),
+                        (e: Error) => toast(`Couldn't download: ${e.message}`),
+                      );
+                    })}
+                  >
+                    <Icon name={isDownloaded ? "check" : "down"} className="size-4 text-[var(--accent)]" />
+                    {downloading ? "Downloading…" : isDownloaded ? "Remove Download" : "Download"}
+                  </button>
+                )}
                 {onRemove && <button className={item} onClick={act(onRemove)}>{removeLabel}</button>}
                 <div className="my-1 border-t border-ink/10" />
                 {track.albumId && <Link className={item} href={`/album?id=${track.albumId}`} onClick={close}>Go to Album</Link>}

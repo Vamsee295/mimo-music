@@ -189,6 +189,17 @@ main {
   opacity: 1;
 }
 
+/* Now Playing: thicker white bar, no knob (Apple Music) */
+.range-apple {
+  background: linear-gradient(to right, rgb(255 255 255 / 0.85) var(--p), rgb(255 255 255 / 0.25) var(--p)) center / 100% 6px no-repeat;
+  border-radius: 999px;
+}
+.range-apple::-webkit-slider-thumb {
+  opacity: 0 !important;
+  width: 20px;
+  height: 20px;
+}
+
 /* Now Playing slides up like the iOS sheet */
 .np-enter {
   animation: np-in 0.45s cubic-bezier(0.32, 0.72, 0, 1);

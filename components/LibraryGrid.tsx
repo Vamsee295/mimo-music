@@ -13,6 +13,8 @@ import { Icon, type IconName } from "./Icon";
 import { Mosaic } from "./ui";
 import { askConfirm } from "./Ask";
 import { toast } from "./Swipe";
+import { MoodCover } from "./MoodPage";
+import { MOODS, loadMood, type MoodId } from "@/lib/moods";
 
 type Kind = "playlist" | "album" | "artist";
 type Act = { label: string; icon: IconName; run: () => void; danger?: boolean };
@@ -79,6 +81,19 @@ export function LibraryGrid() {
         </div>
       ),
     },
+    ...(Object.keys(MOODS) as MoodId[]).map((id) => ({
+      key: `mood:${id}`,
+      kind: "playlist" as const,
+      pinned: true,
+      title: `${MOODS[id].title} ${MOODS[id].hl}`,
+      sub: id === "study" ? "Lofi · chillhop · focus" : "Rain · piano · ambient",
+      href: `/library?tab=${id}`,
+      added: Infinity,
+      acts: [
+        { label: "Play", icon: "play", run: () => loadMood(id).then((ts) => play(ts, true), () => toast("Couldn't load this mix")) },
+      ] as Act[],
+      art: (big: boolean) => <MoodCover id={id} big={big} />,
+    })),
     ...lib.playlists.map((p) => ({
       key: `playlist:${p.id}`,
       kind: "playlist" as const,
@@ -154,7 +169,7 @@ export function LibraryGrid() {
 
   const needle = q.trim().toLowerCase();
   items.forEach((it) => (it.pinned ||= lib.pinned.includes(it.key)));
-  const rank = (it: Item) => (it.key === "liked" ? -1 : it.pinned ? lib.pinned.indexOf(it.key) : 1e6);
+  const rank = (it: Item) => (it.key === "liked" ? -3 : it.key.startsWith("mood:") ? -2 : it.pinned ? lib.pinned.indexOf(it.key) : 1e6);
   const shown = items
     .filter((it) => (!filter || it.kind === filter) && (!needle || `${it.title} ${it.sub}`.toLowerCase().includes(needle)))
     .sort((a, b) => rank(a) - rank(b) || (sort === "az" ? a.title.localeCompare(b.title) : b.added - a.added));

@@ -6,6 +6,8 @@ import { useLibrary } from "@/lib/library";
 import { useData } from "@/lib/useData";
 import { StackHero, Ticker } from "@/components/Hero";
 import { MadeForYou } from "@/components/MadeForYou";
+import { MoodCover } from "@/components/MoodPage";
+import { MOODS, type MoodId } from "@/lib/moods";
 import { ErrorNote, GenreShelf, Section, Shelf, Skeleton, SongGrid } from "@/components/ui";
 
 export default function Home() {
@@ -46,6 +48,25 @@ export default function Home() {
       </Section>
 
       <MadeForYou />
+
+      <Section title="Study & Sleep" kicker="Background music" note="lofi to focus, calm to drift off →">
+        <div className="grid gap-4 sm:grid-cols-2">
+          {(Object.keys(MOODS) as MoodId[]).map((id) => (
+            <Link key={id} href={`/library?tab=${id}`} className="brut brut-hover flex items-center gap-4 rounded-2xl bg-card p-3 pr-5">
+              <span className="w-24 shrink-0 md:w-28">
+                <MoodCover id={id} />
+              </span>
+              <span className="min-w-0">
+                <span className="eyebrow block">{MOODS[id].eyebrow}</span>
+                <span className="display mt-1 block text-[30px]">
+                  {MOODS[id].title} <span className="hl">{MOODS[id].hl}</span>
+                </span>
+                <span className="mt-1 line-clamp-2 block text-[13px] text-ink/60">{MOODS[id].blurb}</span>
+              </span>
+            </Link>
+          ))}
+        </div>
+      </Section>
 
       {history.length > 0 && (
         <Section title="Recently Played" kicker="Your rotation" href="/library?tab=recent" note="on repeat lately ↓">

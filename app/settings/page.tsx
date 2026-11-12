@@ -1,4 +1,5 @@
 "use client";
+import { deleteAllDownloads } from "@/lib/native";
 import { useState, type ReactNode } from "react";
 import { cleanKey, looksLikeKey, testKey } from "@/lib/youtube";
 import { useLibrary } from "@/lib/library";
@@ -141,7 +142,7 @@ export default function SettingsPage() {
           </button>
         </Row>
         <Row label="Reset Library" hint="Loved songs, albums, playlists and settings">
-          <button className={danger} onClick={async () => (await askConfirm("Erase your whole library on this device?", "Erase")) && resetAll()}>
+          <button className={danger} onClick={async () => (await askConfirm("Erase your whole library on this device?", "Erase")) && (deleteAllDownloads(), resetAll())}>
             Reset
           </button>
         </Row>
@@ -236,7 +237,7 @@ function KeySetup() {
     <div className="space-y-4 px-4 py-4">
       <div className={`flex items-center gap-2 text-sm font-medium ${active ? "text-note" : "text-accent"}`}>
         <span className={`size-2 rounded-full ${active ? "bg-note" : "bg-accent"}`} />
-        {active ? "Key added: songs play in full" : "No key yet: songs play as 30-second previews"}
+        {active ? "Key added: songs play in full" : "No key yet: add one to play songs (downloads still play)"}
       </div>
 
       {!key && (

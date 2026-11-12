@@ -1,6 +1,7 @@
 // "Your Music": song files the user imports, kept inside the app's own storage (IndexedDB),
 // not the phone's Downloads folder. Full length, offline, zero data.
 import { create } from "zustand";
+import { deleteDownload } from "./native";
 import type { Track } from "./store";
 
 const DB = "mimo-local";
@@ -183,11 +184,18 @@ export const useLocal = create<LocalState>((set, get) => ({
 
   remove: async (id) => {
     await tx("readwrite", (s) => s.delete(id));
+    deleteDownload(id); // Android: the native engine's copy too
     set((s) => ({ tracks: s.tracks.filter((t) => t.id !== id) }));
   },
 }));
 
 /** Object URL for playing an imported song. Caller revokes it when done. */
+/** The stored file itself (the native engine on Android gets a copy of it). */
+export async function localBlob(id: string): Promise<Blob | null> {
+  const row = await tx<Row | undefined>("readonly", (s) => s.get(id) as IDBRequest<Row | undefined>);
+  return row?.blob ?? null;
+}
+
 export async function localUrl(id: string): Promise<string | null> {
   const row = await tx<Row | undefined>("readonly", (s) => s.get(id) as IDBRequest<Row | undefined>);
   return row ? URL.createObjectURL(row.blob) : null;

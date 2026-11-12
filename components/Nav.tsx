@@ -21,6 +21,8 @@ const library: Item[] = [
   ["/library?tab=device", "Your Music", "device"],
   ["/library?tab=recent", "Recently Played", "clock"],
   ["/liked", "Liked Songs", "heart"],
+  ["/library?tab=study", "Study Lofi", "note"],
+  ["/library?tab=sleep", "Sleep Sounds", "moon"],
   ["/library?tab=artists", "Artists", "user"],
 ];
 const tabs: Item[] = [

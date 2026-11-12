@@ -61,6 +61,9 @@ export async function radioAfter(seed: Track, exclude: Set<string>, n = 10): Pro
     name ? searchSongs(name, 50).then((ts) => ts.filter(credits), none) : none(),
   ]);
   const byDirector = [...catalog, ...found];
-  const chart = byDirector.length >= n ? [] : await topSongs(undefined, 50).catch(none);
+  // charts only fill a gap, and only with songs in the seed's language/genre (Apple tags Indian songs "Tamil",
+  // "Telugu", "Hindi", …): the India chart also carries unrelated hits that broke the mood
+  const fits = (t: Track) => !seed.genre || t.genre === seed.genre;
+  const chart = byDirector.length >= n ? [] : await topSongs(undefined, 100).then((ts) => ts.filter(fits), none);
   return mixRadio(seed, album, byDirector, chart, exclude, n);
 }

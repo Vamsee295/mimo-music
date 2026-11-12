@@ -37,6 +37,8 @@ dependencies {
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     // MediaSession + media-style notification (seek bar, art, lock screen) for MimoMediaPlugin
     implementation "androidx.media:media:1.7.0"
+    // native audio engine (ExoPlayer): big buffer, disk cache, gapless; the page is only the remote control
+    implementation "androidx.media3:media3-exoplayer:1.5.1"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"

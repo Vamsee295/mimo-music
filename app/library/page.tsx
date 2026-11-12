@@ -8,10 +8,15 @@ import { Icon } from "@/components/Icon";
 import { toast } from "@/components/Swipe";
 import { LibraryGrid } from "@/components/LibraryGrid";
 import { PageHeader, PlayShuffle } from "@/components/ui";
+import { MoodPage } from "@/components/MoodPage";
+import { canDownload, removeDownload } from "@/lib/downloads";
 
 const TABS = [
   ["library", "Library"],
+  ["study", "Study Lofi"],
+  ["sleep", "Sleep Sounds"],
   ["all", "Songs"],
+  ["downloads", "Downloads"],
   ["device", "Your Music"],
   ["recent", "Recently Played"],
   ["songs", "Liked Songs"],
@@ -61,6 +66,20 @@ export default function LibraryPage() {
       </div>
 
       {tab === "library" && <LibraryGrid />}
+
+      {tab === "downloads" &&
+        (lib.downloads.length ? (
+          <>
+            <div className="mb-4 flex items-center gap-3">
+              <PlayShuffle tracks={lib.downloads} />
+              <span className="font-mono text-xs text-ink/50">{lib.downloads.length} songs · play with no internet</span>
+            </div>
+            <TrackList tracks={lib.downloads} onRemove={(i) => removeDownload(lib.downloads[i])} removeLabel="Remove Download" />
+          </>
+        ) : (
+          <Empty>{canDownload() ? "Tap ⋯ → Download on any song to keep it in the app and play it with no internet." : "New downloads are off for now: YouTube songs play through YouTube's own player, which can't save them."}</Empty>
+        ))}
+      {(tab === "study" || tab === "sleep") && <MoodPage key={tab} id={tab} />}
 
       {tab === "all" &&
         (lib.songs.length ? (
