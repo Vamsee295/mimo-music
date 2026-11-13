@@ -15,7 +15,6 @@ const TABS = [
   ["library", "Library"],
   ["study", "Study Lofi"],
   ["sleep", "Sleep Sounds"],
-  ["all", "Songs"],
   ["downloads", "Downloads"],
   ["device", "Your Music"],
   ["recent", "Recently Played"],
@@ -80,19 +79,6 @@ export default function LibraryPage() {
           <Empty>{canDownload() ? "Tap ⋯ → Download on any song to keep it in the app and play it with no internet." : "New downloads are off for now: YouTube songs play through YouTube's own player, which can't save them."}</Empty>
         ))}
       {(tab === "study" || tab === "sleep") && <MoodPage key={tab} id={tab} />}
-
-      {tab === "all" &&
-        (lib.songs.length ? (
-          <>
-            <div className="mb-4 flex items-center gap-3">
-              <PlayShuffle tracks={lib.songs} />
-              <span className="font-mono text-xs text-ink/50">{lib.songs.length} songs</span>
-            </div>
-            <TrackList tracks={lib.songs} onRemove={(i) => lib.toggleSong(lib.songs[i])} removeLabel="Remove from Library" />
-          </>
-        ) : (
-          <Empty>Tap ⋯ → Add to Library on any song. Songs you love land here too.</Empty>
-        ))}
 
       {tab === "device" && <YourMusic />}
 

@@ -68,6 +68,15 @@ public class MimoMediaPlugin extends Plugin {
     static Notification current;
 
     private MediaSessionCompat session;
+
+    // One media session for the whole app: the plugin drives it, and Android Auto / other media browsers
+    // (MimoBrowserService) connect to the same one, so the car shows and controls what's playing.
+    private static MediaSessionCompat shared;
+
+    static synchronized MediaSessionCompat session(Context c) {
+        if (shared == null) shared = new MediaSessionCompat(c.getApplicationContext(), "Mimo");
+        return shared;
+    }
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     /** downloads, one at a time, apart from `io` so a song download never delays playback lookups */
     private final ExecutorService dl = Executors.newSingleThreadExecutor();
@@ -97,7 +106,12 @@ public class MimoMediaPlugin extends Plugin {
             wifiLock = wifi.createWifiLock(mode, "mimo:playback");
             wifiLock.setReferenceCounted(false);
         }
-        session = new MediaSessionCompat(ctx, "Mimo");
+        session = session(ctx);
+        android.content.SharedPreferences prefs = ctx.getSharedPreferences("mimo", Context.MODE_PRIVATE);
+        eqOn = prefs.getBoolean("eqOn", false);
+        eqLevels = prefs.getString("eqLevels", "");
+        eqPreset = prefs.getInt("eqPreset", -1);
+        fadeMs = prefs.getInt("fadeMs", 0);
         session.setCallback(new MediaSessionCompat.Callback() {
             @Override public void onPlay() { emit("play", -1); }
             @Override public void onPause() { emit("pause", -1); }
@@ -280,6 +294,9 @@ public class MimoMediaPlugin extends Plugin {
     private ExoPlayer exo;
     /** set when the player rolled into the preloaded next song by itself; the page's play() for it is then a no-op */
     private String autoAdvanced;
+    /** songs the player already rolled past by itself, which the page hasn't caught up with yet: if it asks for
+     *  one of them late (it was asleep through several change-overs), that request is ignored, not replayed */
+    private final java.util.Set<String> passed = new java.util.HashSet<>();
     private boolean resumed = true;
     private final Runnable tick = new Runnable() {
         @Override
@@ -312,11 +329,21 @@ public class MimoMediaPlugin extends Plugin {
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build();
+        exo.setRepeatMode(repeatOne ? Player.REPEAT_MODE_ONE : Player.REPEAT_MODE_OFF);
+        exo.setVolume(baseVolume);
+        attachEq(exo.getAudioSessionId());
+        main.post(fade);
         exo.addListener(new Player.Listener() {
+            @Override
+            public void onAudioSessionIdChanged(int audioSessionId) {
+                attachEq(audioSessionId); // the equalizer follows the player's audio session
+            }
+
             @Override
             public void onMediaItemTransition(MediaItem item, int reason) {
                 if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO || item == null) return;
                 // gapless: already playing the preloaded song, so tell the page to move its queue along
+                if (autoAdvanced != null) passed.add(autoAdvanced); // the page hadn't confirmed that one yet
                 autoAdvanced = item.mediaId;
                 exo.removeMediaItems(0, exo.getCurrentMediaItemIndex());
                 emit("ended", -1);
@@ -392,6 +419,11 @@ public class MimoMediaPlugin extends Plugin {
             return;
         }
         main.post(() -> {
+            if (at == 0 && passed.remove(key)) { // the page catching up on a song already played through
+                call.resolve();
+                return;
+            }
+            passed.clear(); // any other request: the page is in step again
             ExoPlayer p = player();
             MediaItem cur = p.getCurrentMediaItem();
             boolean handedOver = key.equals(autoAdvanced) && at == 0 && cur != null && key.equals(cur.mediaId)
@@ -407,17 +439,56 @@ public class MimoMediaPlugin extends Plugin {
         });
     }
 
-    /** Preload the song after this one (gapless change-over); no url = nothing queued. */
+    /** The songs after this one that the native player can play on its own (Your Music, downloads), in queue
+     *  order: it rolls through them gaplessly even if the page is slow or asleep, and reports each change-over
+     *  ("ended") so the page's queue follows. Empty = nothing queued. */
     @PluginMethod
     public void setNext(final PluginCall call) {
-        final String url = call.getString("url", "");
-        final String key = call.getString("key", "");
+        final com.getcapacitor.JSArray items = call.getArray("items", new com.getcapacitor.JSArray());
         main.post(() -> {
             if (exo != null && exo.getMediaItemCount() > 0) {
                 int after = exo.getCurrentMediaItemIndex() + 1;
                 if (exo.getMediaItemCount() > after) exo.removeMediaItems(after, exo.getMediaItemCount());
-                if (playable(url) && key != null && !key.isEmpty()) exo.addMediaItem(item(url, key));
+                for (int i = 0; i < items.length(); i++) {
+                    org.json.JSONObject o = items.optJSONObject(i);
+                    if (o == null) break;
+                    String url = o.optString("url"), key = o.optString("key");
+                    if (!playable(url) || key.isEmpty()) break; // keep queue order: stop at the first gap
+                    exo.addMediaItem(item(url, key));
+                }
             }
+            call.resolve();
+        });
+    }
+
+    private boolean repeatOne = false; // applied when the native player is created, too
+
+    /** Repeat One for native songs: the player loops the song itself, no round trip through the page. */
+    @PluginMethod
+    public void setRepeatOne(final PluginCall call) {
+        final boolean on = Boolean.TRUE.equals(call.getBoolean("on", false));
+        main.post(() -> {
+            repeatOne = on;
+            if (exo != null) exo.setRepeatMode(on ? Player.REPEAT_MODE_ONE : Player.REPEAT_MODE_OFF);
+            call.resolve();
+        });
+    }
+
+    // Sleep timer, kept here so it fires on time with the screen off even if the page's timers are slowed down.
+    // At the time: pause the native player and tell the page ("pause"), which pauses YouTube songs and
+    // clears its own timer. at = epoch ms, 0 = off.
+    private final Runnable sleepNow = () -> {
+        if (exo != null) exo.setPlayWhenReady(false);
+        emit("pause", -1);
+    };
+
+    @PluginMethod
+    public void setSleep(final PluginCall call) {
+        final long at = Math.round(call.getDouble("at", 0.0));
+        main.post(() -> {
+            main.removeCallbacks(sleepNow);
+            long wait = at - System.currentTimeMillis();
+            if (at > 0) main.postDelayed(sleepNow, Math.max(0, wait));
             call.resolve();
         });
     }
@@ -444,6 +515,7 @@ public class MimoMediaPlugin extends Plugin {
     public void setVolume(final PluginCall call) {
         final float v = (float) Math.max(0, Math.min(1, call.getDouble("volume", 1.0)));
         main.post(() -> {
+            baseVolume = v;
             player().setVolume(v);
             call.resolve();
         });
@@ -458,6 +530,7 @@ public class MimoMediaPlugin extends Plugin {
                 exo.clearMediaItems();
             }
             autoAdvanced = null;
+            passed.clear();
             call.resolve();
         });
     }
@@ -525,12 +598,169 @@ public class MimoMediaPlugin extends Plugin {
         call.resolve();
     }
 
+    private static long dirSize(java.io.File dir) {
+        long n = 0;
+        java.io.File[] all = dir.listFiles();
+        if (all != null) for (java.io.File f : all) n += f.isDirectory() ? dirSize(f) : f.length();
+        return n;
+    }
+
+    /** bytes: the streaming cache, and the songs kept inside the app (downloads + Your Music copies) */
+    @PluginMethod
+    public void storage(PluginCall call) {
+        JSObject r = new JSObject();
+        r.put("cache", dirSize(new java.io.File(getContext().getApplicationContext().getCacheDir(), "audio")));
+        r.put("downloads", dirSize(downloads()));
+        call.resolve(r);
+    }
+
+    /** Empty the streaming cache (songs kept in the app are untouched). */
+    @PluginMethod
+    public void clearCache(final PluginCall call) {
+        main.post(() -> {
+            try {
+                if (cache != null) {
+                    for (String key : new java.util.ArrayList<>(cache.getKeys())) cache.removeResource(key);
+                } else {
+                    java.io.File[] all = new java.io.File(getContext().getApplicationContext().getCacheDir(), "audio").listFiles();
+                    if (all != null) for (java.io.File f : all) if (f.isFile()) f.delete();
+                }
+            } catch (RuntimeException ignored) {
+                // a file in use: it goes next time
+            }
+            call.resolve();
+        });
+    }
+
     /** "Erase library": every download goes too */
     @PluginMethod
     public void deleteAllDownloads(PluginCall call) {
         java.io.File[] all = downloads().listFiles();
         if (all != null) for (java.io.File f : all) f.delete();
         call.resolve();
+    }
+
+    // ── Crossfade (native songs): the end of a song fades out and the next one fades in, back to back (they
+    // don't overlap). ponytail: one player, so a fade rather than a true overlap; a second player would allow it.
+    private float baseVolume = 1f;
+    private int fadeMs = 0;
+    private final Runnable fade = new Runnable() {
+        @Override
+        public void run() {
+            if (exo != null && fadeMs > 0 && exo.isPlaying()) {
+                long pos = exo.getCurrentPosition(), dur = exo.getDuration();
+                float k = 1f;
+                if (pos < fadeMs) k = pos / (float) fadeMs;
+                if (dur != C.TIME_UNSET && dur > 2L * fadeMs && dur - pos < fadeMs) k = Math.min(k, (dur - pos) / (float) fadeMs);
+                exo.setVolume(baseVolume * Math.max(0f, Math.min(1f, k)));
+            } else if (exo != null && fadeMs == 0 && exo.getVolume() != baseVolume) exo.setVolume(baseVolume);
+            main.postDelayed(this, 80);
+        }
+    };
+
+    /** seconds: 0 = off, up to 12 */
+    @PluginMethod
+    public void setFade(final PluginCall call) {
+        final int ms = (int) Math.max(0, Math.min(12_000, Math.round(call.getDouble("seconds", 0.0) * 1000)));
+        main.post(() -> {
+            fadeMs = ms;
+            getContext().getSharedPreferences("mimo", Context.MODE_PRIVATE).edit().putInt("fadeMs", ms).apply();
+            call.resolve();
+        });
+    }
+
+    // ── Equalizer (native songs): Android's own, on the native player's audio session. YouTube songs play in the
+    // web view, which has no session to attach to. Settings are kept on the phone and come back with the player.
+    private android.media.audiofx.Equalizer eq;
+    private boolean eqOn = false;
+    private String eqLevels = ""; // "level,level,…" in millibels, one per band
+    private int eqPreset = -1;
+
+    private void attachEq(int sessionId) {
+        releaseEq();
+        if (sessionId == C.AUDIO_SESSION_ID_UNSET || sessionId == 0) return;
+        try {
+            eq = new android.media.audiofx.Equalizer(0, sessionId);
+            applyEq();
+        } catch (RuntimeException e) {
+            eq = null; // some phones don't offer an equalizer to apps; music plays untouched
+        }
+    }
+
+    private void releaseEq() {
+        if (eq != null) {
+            try {
+                eq.release();
+            } catch (RuntimeException ignored) {}
+            eq = null;
+        }
+    }
+
+    private void applyEq() {
+        if (eq == null) return;
+        try {
+            if (eqPreset >= 0 && eqPreset < eq.getNumberOfPresets()) eq.usePreset((short) eqPreset);
+            else if (!eqLevels.isEmpty()) {
+                String[] lv = eqLevels.split(",");
+                for (short b = 0; b < eq.getNumberOfBands() && b < lv.length; b++) eq.setBandLevel(b, Short.parseShort(lv[b].trim()));
+            }
+            eq.setEnabled(eqOn);
+        } catch (RuntimeException ignored) {
+            // a bad saved value: leave the equalizer as it is
+        }
+    }
+
+    private JSObject eqState() {
+        JSObject r = new JSObject();
+        r.put("available", eq != null);
+        r.put("enabled", eqOn);
+        r.put("preset", eqPreset);
+        if (eq == null) return r;
+        short[] range = eq.getBandLevelRange();
+        r.put("min", range[0]);
+        r.put("max", range[1]);
+        com.getcapacitor.JSArray bands = new com.getcapacitor.JSArray();
+        for (short b = 0; b < eq.getNumberOfBands(); b++) {
+            JSObject o = new JSObject();
+            o.put("hz", eq.getCenterFreq(b) / 1000);
+            o.put("level", eq.getBandLevel(b));
+            bands.put(o);
+        }
+        r.put("bands", bands);
+        com.getcapacitor.JSArray presets = new com.getcapacitor.JSArray();
+        for (short i = 0; i < eq.getNumberOfPresets(); i++) presets.put(eq.getPresetName(i));
+        r.put("presets", presets);
+        return r;
+    }
+
+    /** bands (Hz + current level), level range, the phone's presets, on/off */
+    @PluginMethod
+    public void eqInfo(final PluginCall call) {
+        main.post(() -> {
+            if (eq == null) attachEq(player().getAudioSessionId());
+            call.resolve(eqState());
+        });
+    }
+
+    /** any of: enabled, preset (index, -1 = custom), levels (millibels per band) */
+    @PluginMethod
+    public void setEq(final PluginCall call) {
+        main.post(() -> {
+            if (eq == null) attachEq(player().getAudioSessionId());
+            if (call.getData().has("enabled")) eqOn = Boolean.TRUE.equals(call.getBoolean("enabled", false));
+            if (call.getData().has("preset")) eqPreset = call.getInt("preset", -1);
+            com.getcapacitor.JSArray lv = call.getArray("levels", null);
+            if (lv != null) {
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < lv.length(); i++) sb.append(i > 0 ? "," : "").append(lv.optInt(i));
+                eqLevels = sb.toString();
+                eqPreset = -1; // moving a band makes it a custom setting
+            }
+            applyEq();
+            getContext().getSharedPreferences("mimo", Context.MODE_PRIVATE).edit()
+                .putBoolean("eqOn", eqOn).putString("eqLevels", eqLevels).putInt("eqPreset", eqPreset).apply();
+            call.resolve(eqState());
+        });
     }
 
     // Audio-only streams, like BitChord / NewPipe: ask YouTube's player API for a video's formats as its
@@ -691,9 +921,12 @@ public class MimoMediaPlugin extends Plugin {
     protected void handleOnDestroy() {
         holdLocks(false);
         main.removeCallbacks(tick);
+        main.removeCallbacks(sleepNow);
         if (exo != null) exo.release();
         exo = null;
-        if (session != null) session.release();
+        if (session != null) session.setActive(false); // shared with Android Auto: kept, just inactive
+        releaseEq();
+        main.removeCallbacks(fade);
         if (serviceRunning) getContext().stopService(new Intent(getContext(), MimoPlaybackService.class));
         io.shutdownNow();
         dl.shutdownNow();

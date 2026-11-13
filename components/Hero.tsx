@@ -1,4 +1,5 @@
 "use client";
+import { ProfileLink } from "./ProfileLink";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { Album } from "@/lib/api";
@@ -43,7 +44,11 @@ export function StackHero({ albums, songs }: { albums: Album[]; songs: Track[] }
   return (
     <section className="mb-12 grid items-center gap-10 lg:grid-cols-[1.15fr_1fr]">
       <div>
-        <p className="note mb-3 -rotate-1">hi — here&apos;s what {place} is playing ↓</p>
+        {/* greeting and the profile button share one line (phones; the sidebar has Account on desktop) */}
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <p className="note -rotate-1">hi — here&apos;s what {place} is playing ↓</p>
+          <ProfileLink />
+        </div>
         <h1 className="display text-[54px] sm:text-[72px] xl:text-[92px]">
           Music that <br />
           <span className="hl my-1">moves</span>

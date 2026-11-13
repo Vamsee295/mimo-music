@@ -44,7 +44,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <Suspense>
           <Sidebar />
         </Suspense>
-        <main className="flex-1 overflow-y-auto overflow-x-hidden px-4 pb-40 pt-[max(1.25rem,env(safe-area-inset-top))] md:px-8 md:pb-28 md:pt-8">
+        <main className="relative flex-1 overflow-y-auto overflow-x-hidden px-4 pb-40 pt-[max(1.25rem,env(safe-area-inset-top))] md:px-8 md:pb-28 md:pt-8">
           <Suspense>
             <PageTransition>{children}</PageTransition>
           </Suspense>

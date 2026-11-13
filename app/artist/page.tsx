@@ -6,6 +6,11 @@ import { getArtist, getDiscography } from "@/lib/api";
 import { useData } from "@/lib/useData";
 import { TrackList } from "@/components/TrackRow";
 import { AlbumCard, ErrorNote, PlayShuffle, Section, Shelf, Skeleton } from "@/components/ui";
+import { useLibrary } from "@/lib/library";
+import { toast } from "@/components/Swipe";
+import { Icon } from "@/components/Icon";
+import { useRouter } from "next/navigation";
+import type { Track } from "@/lib/store";
 
 export default function ArtistPage() {
   const id = useSearchParams().get("id") ?? "";
@@ -30,7 +35,10 @@ export default function ArtistPage() {
             <p className="eyebrow mb-2">{artist.genre} · artist</p>
             <h1 className="display break-words text-[clamp(34px,11vw,52px)] md:text-[clamp(56px,6.5vw,96px)]"><span className="hl">{artist.name}</span></h1>
           </div>
-          <PlayShuffle tracks={songs} />
+          <div className="flex flex-wrap items-center gap-2">
+            <HeroSave artistId={id} name={artist.name} top={songs} />
+            <PlayShuffle tracks={songs} />
+          </div>
         </div>
       </div>
 
@@ -47,7 +55,7 @@ export default function ArtistPage() {
           <Shelf>{singles.map((a) => <AlbumCard key={a.id} album={a} />)}</Shelf>
         </Section>
       )}
-      <AllSongs artistId={id} />
+      <AllSongs artistId={id} name={artist.name} />
     </>
   );
 }
@@ -55,7 +63,7 @@ export default function ArtistPage() {
 const LANGS = ["All", "Tamil", "Telugu", "Other"] as const;
 
 /** Full discography with a language filter (Apple tags Indian songs by language as genre). */
-function AllSongs({ artistId }: { artistId: string }) {
+function AllSongs({ artistId, name }: { artistId: string; name: string }) {
   const { data, error } = useData(`discography:${artistId}`, () => getDiscography(artistId));
   const [lang, setLang] = useState<(typeof LANGS)[number]>("All");
   const [shown, setShown] = useState(100);
@@ -83,7 +91,10 @@ function AllSongs({ artistId }: { artistId: string }) {
             ) : null;
           })}
         </div>
-        <PlayShuffle tracks={tracks} />
+        <div className="flex items-center gap-2">
+          <SaveAsPlaylist name={`All ${name} songs${lang === "All" ? "" : ` · ${lang}`}`} tracks={tracks} />
+          <PlayShuffle tracks={tracks} />
+        </div>
       </div>
       {/* ponytail: render in pages of 100 instead of virtualising; fine up to a few thousand rows */}
       <TrackList tracks={tracks.slice(0, shown)} />
@@ -94,4 +105,34 @@ function AllSongs({ artistId }: { artistId: string }) {
       )}
     </Section>
   );
+}
+
+/** "Add to Library" for a whole artist: a playlist with all their songs (the language filter applies). Saving
+ *  again refreshes that playlist with the latest songs instead of making a copy. */
+function SaveAsPlaylist({ name, tracks }: { name: string; tracks: Track[] }) {
+  const router = useRouter();
+  const save = () => {
+    const lib = useLibrary.getState();
+    const old = lib.playlists.find((p) => p.name === name);
+    if (old) lib.deletePlaylist(old.id);
+    const id = lib.createPlaylist(name);
+    tracks.forEach((t) => useLibrary.getState().addToPlaylist(id, t));
+    toast(old ? `Updated “${name}” · ${tracks.length} songs` : `Saved “${name}” to your Library · ${tracks.length} songs`);
+    router.push(`/playlist?id=${id}`);
+  };
+  return (
+    <button
+      onClick={save}
+      disabled={!tracks.length}
+      className="label-cond flex h-10 items-center gap-1.5 rounded-full border-2 border-[var(--line)] px-4 text-[15px] hover:bg-ink/[0.06] disabled:opacity-40"
+    >
+      <Icon name="plus" className="size-4" /> Add to Library
+    </button>
+  );
+}
+
+/** The hero's "Add to Library": all of the artist's songs (their full list once it has loaded, top songs till then). */
+function HeroSave({ artistId, name, top }: { artistId: string; name: string; top: Track[] }) {
+  const { data } = useData(`discography:${artistId}`, () => getDiscography(artistId));
+  return <SaveAsPlaylist name={`All ${name} songs`} tracks={data ?? top} />;
 }

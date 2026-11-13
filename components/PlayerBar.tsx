@@ -6,13 +6,14 @@ import { useLibrary, ytKey } from "@/lib/library";
 import { QuotaError, findVideo, forgetVideo, loadYT } from "@/lib/youtube";
 import { isLocal, localBlob, localUrl } from "@/lib/local";
 import { usePlayer, type Track } from "@/lib/store";
+import { LibraryPicker } from "./AddToLibrary";
 import { Icon, type IconName } from "./Icon";
 import { fmt } from "./TrackRow";
 import { Swipe, toast } from "./Swipe";
 import { btnPrimary, btnSecondary } from "./ui";
 import { getBio, getLyrics } from "@/lib/extras";
 import { useData } from "@/lib/useData";
-import { BACK_EVENT, engine, nativeLocalCopy, nativeMedia, offlineStream, type Stream } from "@/lib/native";
+import { BACK_EVENT, engine, nativeLocalCopy, nativeMedia, offlineStream, setStatusBarHidden, type Stream } from "@/lib/native";
 import { isBackground, useForeground } from "@/lib/appState";
 import { director, radioAfter } from "@/lib/radio";
 import { useArtColor } from "@/lib/artColor";
@@ -21,11 +22,28 @@ type Seek = { time: number; dur: number; seek: (t: number) => void };
 
 export type Mode = "audio" | "yt" | "finding";
 
-// YouTube's terms: the player must be visible and at least 200x200 (+ the 2.4px border each side)
-const YT_CARD = 205;
+
+// ── Resume after the app was closed: the current song's last position ──
+const POS_KEY = "mimo:position";
+const safeSet = (k: string, v: string) => {
+  try {
+    localStorage.setItem(k, v);
+  } catch {
+    /* storage blocked: it just starts from the beginning next time */
+  }
+};
+function savedPosition(): { id: string; t: number } | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(POS_KEY) ?? "null");
+    return v && typeof v.id === "string" && Number.isFinite(v.t) ? v : null;
+  } catch {
+    return null;
+  }
+}
 
 // ── Autoplay + "what plays after this song" (plain functions: they only read the stores) ──
 let radioJob: { id: string; done: Promise<void> } | null = null;
+const suggested = new Set<string>(); // everything Autoplay has lined up since the app opened
 
 /** Line up songs after `seed` (the last song in the queue). One job per song; a failed fetch is retried
  *  (2s, 8s); if it still fails, the end-of-song check in advance() tries once more. */
@@ -36,11 +54,17 @@ function lineUp(seed: Track) {
       if (pause) await new Promise((r) => setTimeout(r, pause));
       const st = usePlayer.getState();
       if (st.queue[st.index]?.id !== seed.id || st.index !== st.queue.length - 1) return; // moved on, or songs were queued
-      const played = new Set([...st.queue, ...useLibrary.getState().history.slice(0, 50)].map((t) => t.id));
+      const lib = useLibrary.getState();
+      // normally: not what's queued or among your last 50 plays. "Don't repeat songs" (Settings → Playback):
+      // also nothing from your whole recent history, nor anything Autoplay already suggested since the app opened
+      const noRepeat = lib.settings.noRepeatAutoplay;
+      const played = new Set([...st.queue, ...lib.history.slice(0, noRepeat ? 100 : 50)].map((t) => t.id));
+      if (noRepeat) suggested.forEach((id) => played.add(id));
       const more = await radioAfter(seed, played).catch(() => [] as Track[]);
       const now = usePlayer.getState();
       if (now.queue[now.index]?.id !== seed.id) return;
       if (more.length) {
+        more.forEach((t) => suggested.add(t.id));
         now.appendMany(more);
         return toast(`Autoplay: more like ${director(seed.artist)} added to Up Next`);
       }
@@ -115,6 +139,7 @@ export function PlayerBar() {
   // which song the YouTube player was last told to load, and when (see "3. play / pause" and the PAUSED event)
   const loaded = useRef({ key: "", at: 0 });
   const resumeAt = useRef({ key: "", t: 0 });
+  const reopened = useRef(false); // the first song after opening the app has been loaded
   const mode: Mode = !cur ? "audio" : src?.key === curKey ? (src.yt ? "yt" : "audio") : "finding";
   // the stream the native engine is playing for the current song (Android), and its clock (from "time" events)
   const stream = src?.key === curKey ? src.stream : undefined;
@@ -223,8 +248,14 @@ export function PlayerBar() {
     const a = audio.current;
     if (!a || !cur || src?.key !== curKey) return;
     const playing = usePlayer.getState().playing;
-    const at = resumeAt.current.key === curKey ? resumeAt.current.t : 0; // fresh link after an error: pick up there
+    let at = resumeAt.current.key === curKey ? resumeAt.current.t : 0; // fresh link after an error: pick up there
     resumeAt.current = { key: "", t: 0 };
+    if (!reopened.current) {
+      // first song after the app opened: continue where it was left, if it's the same song
+      reopened.current = true;
+      const saved = savedPosition();
+      if (saved?.id === cur.id) at = saved.t;
+    }
     streamKey.current = src.stream?.key ?? "";
     if (src.yt) {
       a.pause();
@@ -234,8 +265,8 @@ export function PlayerBar() {
       ensurePlayer().then((p) => {
         if (keyRef.current !== curKey) return;
         loaded.current = { key: curKey, at: Date.now() };
-        if (usePlayer.getState().playing) p.loadVideoById(id); // read now, not when the lookup started
-        else p.cueVideoById(id);
+        if (usePlayer.getState().playing) p.loadVideoById({ videoId: id, startSeconds: at }); // read now, not when the lookup started
+        else p.cueVideoById({ videoId: id, startSeconds: at });
       });
     } else if (src.stream) {
       yt.current?.stopVideo();
@@ -357,19 +388,30 @@ export function PlayerBar() {
 
   // Look the next song up while this one plays: the change-over is then instant and doesn't depend on a
   // network call at that exact moment (the phone may be asleep by then). Cached, so it costs nothing twice.
-  // A downloaded next song (Android) also goes to the native engine, which rolls into it without a gap.
+  // Android: the run of upcoming songs the native engine can play by itself (Your Music, downloads; up to 10,
+  // stopping at the first YouTube song) goes to it too, so it rolls through them even if this page stalls.
   const upNext = s.queue[s.index + 1];
   const gapless = s.repeat !== "one" && !s.sleepAfterTrack;
+  const ahead = s.queue
+    .slice(s.index + 1, s.index + 11)
+    .map((t) => t.id)
+    .join(",");
   useEffect(() => {
     const k = ytKey();
     if (!s.playing || !upNext) return;
     let live = true;
     const id = setTimeout(async () => {
       try {
-        const next = await offlineStream(upNext.id); // a download or a Your Music file already copied natively
-        if (next) {
-          if (live && gapless && stream) engine.setNext(next);
-        } else if (k && !isLocal(upNext)) await findVideo(upNext, k);
+        const st = usePlayer.getState();
+        const chain: Stream[] = [];
+        for (const t of st.queue.slice(st.index + 1, st.index + 11)) {
+          const blob = isLocal(t) ? await localBlob(t.id) : null;
+          const n = blob ? await nativeLocalCopy(t.id, blob) : await offlineStream(t.id);
+          if (!n) break; // a YouTube song: the page plays that one, the chain stops here
+          chain.push(n);
+        }
+        if (live && gapless && stream) engine.setNext(chain);
+        if (!chain.length && k && !isLocal(upNext)) await findVideo(upNext, k);
       } catch {
         /* the change-over looks it up again */
       }
@@ -380,7 +422,31 @@ export function PlayerBar() {
       engine.setNext(); // the queue changed (or playback paused): whatever was preloaded may be the wrong song now
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [upNext?.id, s.playing, gapless, stream?.key]);
+  }, [ahead, s.playing, gapless, stream?.key]);
+
+  // Repeat One for native songs loops inside the native engine ("End of this song" sleep beats it)
+  useEffect(() => {
+    engine.setRepeatOne(s.repeat === "one" && !s.sleepAfterTrack);
+  }, [s.repeat, s.sleepAfterTrack]);
+
+  // the sleep timer also runs natively, so it fires on time with the screen off
+  useEffect(() => {
+    engine.setSleep(s.sleepAt);
+  }, [s.sleepAt]);
+
+  // Android, optional: no clock / battery bar while Now Playing is open
+  const hideStatusBar = useLibrary((st) => st.settings.hideStatusBar);
+  useEffect(() => {
+    if (!hideStatusBar || panel !== "full") return;
+    setStatusBarHidden(true);
+    return () => void setStatusBarHidden(false);
+  }, [hideStatusBar, panel]);
+
+  const crossfade = useLibrary((st) => st.settings.crossfade);
+  useEffect(() => {
+    engine.setFade(crossfade);
+  }, [crossfade]);
+
 
   // Recently Played + Account stats
   useEffect(() => {
@@ -405,6 +471,24 @@ export function PlayerBar() {
     setTime(t);
   };
   const prev = () => (position() > 3 ? seek(0) : s.prev());
+
+  // Where the song was: saved every few seconds while playing (and when the app is left), so after Android
+  // closes the app — or you do — reopening carries on from the same second instead of the start.
+  useEffect(() => {
+    if (!cur || !s.playing) return;
+    const save = () => {
+      const t = position();
+      if (t > 1) safeSet(POS_KEY, JSON.stringify({ id: cur.id, t }));
+    };
+    const id = setInterval(save, 5000);
+    window.addEventListener("pagehide", save);
+    return () => {
+      save();
+      clearInterval(id);
+      window.removeEventListener("pagehide", save);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cur?.id, s.playing, mode]);
 
   // OS media controls + lock screen
   useEffect(() => {
@@ -482,7 +566,10 @@ export function PlayerBar() {
     const handle = media.onAction((a) => {
       const st = usePlayer.getState();
       if (a.type === "play") st.setPlaying(true);
-      else if (a.type === "pause") st.setPlaying(false);
+      else if (a.type === "pause") {
+        st.setPlaying(false);
+        if (st.sleepAt && Date.now() >= st.sleepAt - 1000) st.setSleep(null); // the native sleep timer fired
+      }
       else if (a.type === "next") st.next();
       else if (a.type === "prev") actions.current.prev();
       else if (a.type === "seek" && a.position != null) {
@@ -518,20 +605,22 @@ export function PlayerBar() {
   const sk: Seek = unavailable ? { time: 0, dur: 0, seek } : { time, dur, seek };
   const toggle = () => cur && s.setPlaying(!s.playing);
 
-  // The official player is always visible while a YouTube song plays (YouTube's terms): glued to its spot on
-  // the album art in Now Playing, otherwise a 200x200 card above the player bar. Paused → tucked away.
-  const floating = mode === "yt" && panel !== "full" && s.playing;
-  const tucked = mode !== "yt" || (panel !== "full" && !s.playing);
+  // The player only shows in Now Playing, exactly under the big cover (covered by the same art). Everywhere
+  // else it's invisible and untouchable: behind the page at opacity 0, but kept inside the viewport (a frame
+  // that is fully off-screen may get paused by the browser), so it never covers a button.
+  const hidden = mode !== "yt" || panel !== "full" || !slot; // no spot = Lyrics / Up Next open on a phone
   useEffect(() => {
     const host = ytHost.current;
     if (!host || panel !== "full" || !slot || mode !== "yt") return;
     let raf = 0;
     // re-placed only when something moves it (scrolling, resizing, the sheet sliding in), not every frame
     const place = () => {
-      let r = slot.getBoundingClientRect();
-      // spot hidden (phone lyrics / queue view) → keep a visible corner card instead
-      if (r.width < YT_CARD) r = new DOMRect(innerWidth - YT_CARD - 8, innerHeight - YT_CARD - 8, YT_CARD, YT_CARD);
-      Object.assign(host.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
+      const r = slot.getBoundingClientRect();
+      // cover hidden (phone Lyrics / Up Next view): the player goes invisible and untouchable, like everywhere
+      // else, and comes back under the cover when the panel closes (Spotify / Apple Music behave the same)
+      if (r.width < 1)
+        return void Object.assign(host.style, { left: "0px", top: "0px", width: "205px", height: "205px", opacity: "0", zIndex: "-50", pointerEvents: "none" });
+      Object.assign(host.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px`, opacity: "", zIndex: "", pointerEvents: "" });
     };
     const schedule = () => {
       cancelAnimationFrame(raf);
@@ -544,17 +633,17 @@ export function PlayerBar() {
       if (performance.now() - opened < 600) raf = requestAnimationFrame(follow);
     };
     follow();
-    const ro = new ResizeObserver(schedule);
+    const ro = new ResizeObserver(() => place()); // cover shown / hidden / resized: right away, not on a frame
     ro.observe(slot);
     window.addEventListener("scroll", schedule, true);
-    window.addEventListener("resize", schedule);
-    window.addEventListener("animationend", schedule, true); // the sheet finished sliding in (rAF may be throttled)
+    window.addEventListener("resize", place);
+    window.addEventListener("animationend", place, true); // the sheet finished sliding in (frames may be throttled)
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
       window.removeEventListener("scroll", schedule, true);
-      window.removeEventListener("resize", schedule);
-      window.removeEventListener("animationend", schedule, true);
+      window.removeEventListener("resize", place);
+      window.removeEventListener("animationend", place, true);
       host.removeAttribute("style");
     };
   }, [panel, slot, mode]);
@@ -574,12 +663,12 @@ export function PlayerBar() {
       <div
         ref={ytHost}
         aria-label="YouTube player"
-        className={`fixed overflow-hidden rounded-xl border-[2.4px] border-[var(--line)] bg-black shadow-[4px_5px_0_var(--hard)] ${
-          tucked ? "pointer-events-none -left-[9999px] top-0 size-[205px]" : panel === "full" ? "z-[60]" : "z-30"
-        } ${floating ? "bottom-[calc(9rem+env(safe-area-inset-bottom))] right-2 size-[205px] md:bottom-24 md:right-4" : ""}`}
+        className={`fixed overflow-hidden rounded-xl bg-black ${
+          hidden ? "pointer-events-none left-0 top-0 -z-50 size-[205px] opacity-0" : "z-[60]"
+        }`}
       >
         <div ref={ytMount} className="size-full [&>iframe]:size-full" />
-        {cur && <img src={cur.art} alt="" className="pointer-events-auto absolute inset-0 size-full object-cover" />}
+        {cur && <img src={cur.art} alt="" className={`absolute inset-0 size-full object-cover ${hidden ? "pointer-events-none" : ""}`} />}
       </div>
 
       {panel === "queue" && (
@@ -600,12 +689,12 @@ export function PlayerBar() {
       {cur && src?.key === curKey && src.why && !src.yt && !src.url && !src.stream && !onSettings && (
         <div
           role="status"
-          className="brut fixed inset-x-2 bottom-[calc(9rem+env(safe-area-inset-bottom))] z-30 flex items-center gap-3 rounded-2xl bg-accent px-4 py-2.5 text-[13px] font-medium text-paper md:bottom-[100px] md:left-[calc(var(--sb,240px)+1rem)] md:right-auto md:max-w-xl"
+          className="mini-player brut fixed inset-x-2 bottom-[calc(9rem+env(safe-area-inset-bottom))] z-30 flex items-center gap-3 rounded-2xl bg-accent px-4 py-2.5 text-[13px] font-medium text-paper md:bottom-[100px] md:left-[calc(var(--sb,240px)+1rem)] md:right-auto md:max-w-xl"
         >
           <Icon name="info" className="size-5 shrink-0" />
           <span className="min-w-0 flex-1">{src.why}</span>
           {src.fail === "stop" && (
-            <Link href="/settings#full-songs" className="label-cond shrink-0 rounded-lg border-2 border-[var(--ink)] bg-paper px-2.5 py-1 text-[13px] text-ink">
+            <Link href="/settings?s=youtube" className="label-cond shrink-0 rounded-lg border-2 border-[var(--ink)] bg-paper px-2.5 py-1 text-[13px] text-ink">
               Settings
             </Link>
           )}
@@ -651,7 +740,7 @@ export function PlayerBar() {
 
       {/* Phone: mini player above the tab bar */}
       {cur && (
-        <div className="fixed inset-x-2 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] brut z-30 [view-transition-name:mini] overflow-hidden rounded-2xl bg-card md:hidden">
+        <div className="mini-player fixed inset-x-2 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] brut z-30 [view-transition-name:mini] overflow-hidden rounded-2xl bg-card md:hidden">
           <div className="flex items-center gap-3 p-2">
             <button onClick={() => setPanel("full")} aria-label="Open Now Playing" className="flex min-w-0 flex-1 items-center gap-3 text-left">
               <img src={cur.art} alt="" className="size-11 rounded-lg border-2 border-[var(--line)]" />
@@ -1014,7 +1103,9 @@ function NowPlaying({
             <div className={`flex min-h-0 flex-1 flex-col justify-center ${panelOpen ? "max-md:hidden" : ""}`}>
               {/* The cover. For YouTube songs the player (covered by this same art) sits exactly on top of it. */}
               <div className="relative mx-auto w-full max-w-[min(100%,28rem,44vh)]">
-                {mode === "yt" && <div ref={setSlot} aria-hidden className="absolute inset-0 z-10" />}
+                {/* the player's spot; removed while Lyrics / Up Next replace the cover (phone) or the ⋯ menu is open (the
+                    player sits above this whole screen), which hides it */}
+                {mode === "yt" && !panelOpen && !menu && <div ref={setSlot} aria-hidden className="absolute inset-0 z-10" />}
                 <img
                   src={cur.art}
                   alt=""
@@ -1038,29 +1129,29 @@ function NowPlaying({
                 <p className="mt-2 rounded-xl bg-white/10 px-3 py-2 text-center text-[13px] text-white/85">
                   {why}{" "}
                   {!hasKey && (
-                    <Link href="/settings#full-songs" onClick={onClose} className="font-semibold underline">
+                    <Link href="/settings?s=youtube" onClick={onClose} className="font-semibold underline">
                       Open Settings →
                     </Link>
                   )}
                 </p>
               )}
               <div className="my-5 flex items-center justify-center gap-14">
-                <button onClick={prev} aria-label="Previous" className="text-white transition active:scale-90">
-                  <Icon name="prev" className="size-11" />
+                <button onClick={prev} aria-label="Previous" className="np-btn">
+                  <Icon name="rewind" className="size-12" />
                 </button>
-                <button onClick={() => s.setPlaying(!playing)} aria-label={playing ? "Pause" : "Play"} className="text-white transition active:scale-90">
-                  <Icon name={playing ? "pause" : "play"} className="size-16" />
+                <button onClick={() => s.setPlaying(!playing)} aria-label={playing ? "Pause" : "Play"} className="np-btn">
+                  <Icon name={playing ? "pauseSoft" : "playSoft"} className="size-[68px]" />
                 </button>
-                <button onClick={() => s.next()} aria-label="Next" className="text-white transition active:scale-90">
-                  <Icon name="next" className="size-11" />
+                <button onClick={() => s.next()} aria-label="Next" className="np-btn">
+                  <Icon name="forward" className="size-12" />
                 </button>
               </div>
               {/* bottom row: Lyrics · Up Next (phone opens them in the cover's place) */}
               <div className="flex items-center justify-between px-6 md:hidden">
                 {(
                   [
-                    ["lyrics", "lyrics", "Lyrics"],
-                    ["queue", "queue", "Playing Next"],
+                    ["lyrics", "lyricsBubble", "Lyrics"],
+                    ["queue", "list", "Playing Next"],
                   ] as const
                 ).map(([t, icon, label]) => (
                   <button
@@ -1127,6 +1218,7 @@ function SongMenu({ cur, onClose, closePlayer, showArtist }: { cur: Track; onClo
   const s = usePlayer();
   const saved = useLibrary((st) => st.songs.some((t) => t.id === cur.id));
   const [sleepOpen, setSleepOpen] = useState(false);
+  const [picking, setPicking] = useState(false); // "Add to Library" → where?
   const [now] = useState(Date.now); // when the menu opened: minutes left on the sleep timer
   const row = "flex w-full items-center gap-4 px-5 py-3 text-left text-[17px] text-white transition active:bg-white/10";
   const act = (fn: () => void) => () => (fn(), onClose());
@@ -1163,15 +1255,15 @@ function SongMenu({ cur, onClose, closePlayer, showArtist }: { cur: Track; onClo
         <button onClick={act(radio)} className={row}>
           <Icon name="radio" className="size-6 text-white/80" /> Start radio
         </button>
-        <button
-          onClick={act(() => {
-            useLibrary.getState().toggleSong(cur);
-            toast(saved ? "Removed from Library" : "Added to Library");
-          })}
-          className={row}
-        >
-          <Icon name={saved ? "check" : "plus"} className="size-6 text-white/80" /> {saved ? "Remove from Library" : "Add to Library"}
+        <button onClick={() => setPicking((o) => !o)} className={row}>
+          <Icon name={saved ? "check" : "plus"} className="size-6 text-white/80" /> {saved ? "In Library" : "Add to Library"}
+          <Icon name="right" className={`ml-auto size-5 text-white/50 transition ${picking ? "rotate-90" : ""}`} />
         </button>
+        {picking && (
+          <div className="mx-3 mb-1 rounded-2xl bg-white/10 py-1">
+            <LibraryPicker track={cur} row="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[15px] text-white active:bg-white/10" onDone={onClose} />
+          </div>
+        )}
         <button onClick={act(() => s.toggleShuffle())} className={row}>
           <Icon name="shuffle" className="size-6 text-white/80" /> Shuffle
           <span className={`ml-auto text-[14px] ${s.shuffle ? "text-white" : "text-white/40"}`}>{s.shuffle ? "On" : "Off"}</span>
@@ -1244,7 +1336,9 @@ function LyricsPanel({ cur, sk, synced }: { cur: Track; sk: Seek; synced: boolea
   const playing = usePlayer((s) => s.playing);
   const lines = data?.synced;
   const t = useSmoothTime(sk.time, playing) + offset;
-  const live = synced && !!lines;
+  const opts = useLibrary((st) => st.settings);
+  const live = synced && opts.syncedLyrics && !!lines;
+  const blurOthers = opts.blurLyrics && !opts.reduceBlur;
   const active = live ? lines.findLastIndex((l) => l.t <= t + 0.15) : -1;
   // progress through the current line, 0..1 → drives the left-to-right fill
   const next = live && active >= 0 ? (lines[active + 1]?.t ?? lines[active].t + 5) : 0;
@@ -1324,7 +1418,7 @@ function LyricsPanel({ cur, sk, synced }: { cur: Track; sk: Seek; synced: boolea
         ) : (
           <p className="whitespace-pre-line text-[19px] font-medium leading-relaxed text-ink/85">{data.plain}</p>
         )}
-        {lines && <p className="note mt-3 text-[17px]">lyrics move with the music on full songs</p>}
+        {lines && opts.syncedLyrics && <p className="note mt-3 text-[17px]">lyrics move with the music on full songs</p>}
       </div>
     );
 
@@ -1341,7 +1435,7 @@ function LyricsPanel({ cur, sk, synced }: { cur: Track; sk: Seek; synced: boolea
             const near = Math.abs(d) <= 6; // blur is costly: only near lines get it
             const style: CSSProperties = {
               opacity: isNow ? 1 : d < 0 ? 0.28 : Math.max(0.22, 0.6 - d * 0.07),
-              filter: !isNow && near ? `blur(${Math.min(2.2, Math.abs(d) * 0.55)}px)` : undefined,
+              filter: blurOthers && !isNow && near ? `blur(${Math.min(2.2, Math.abs(d) * 0.55)}px)` : undefined,
               transform: `scale(${isNow ? 1 : 0.94})`,
             };
             return (

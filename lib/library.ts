@@ -6,6 +6,7 @@ import { cleanKey } from "./youtube";
 let libLoaded = false; // flips once saved data has been read; blocks writes before that
 import type { Track } from "./store";
 import type { Album } from "./api";
+import { dayOf, type PlayLog } from "./replay";
 
 /** Something you opened from Search, shown under the search box next time (newest first) */
 export type Recent =
@@ -35,6 +36,21 @@ export type Settings = {
   autoplay: boolean; // keep playing similar songs when the queue ends
   dataSaver: boolean; // keep the YouTube player small → YouTube streams low-res video (less data)
   ytKey: string; // user's own YouTube Data API key (falls back to NEXT_PUBLIC_YT_KEY)
+  crossfade: number; // seconds of fade between native songs (Android); 0 = off
+  themeSystem: boolean; // follow the phone's light / dark setting (it then sets `theme`)
+  reduceBlur: boolean; // solid fills instead of frosted glass, no lyric blur
+  syncedLyrics: boolean; // lyrics move with the song
+  blurLyrics: boolean; // lines other than the current one are softly blurred
+  swipePlayNext: boolean; // swiping a song right: play it next (on) or add it to the end of your queue (off)
+  noRepeatAutoplay: boolean; // Autoplay never suggests a song already played or suggested since the app opened
+  hideStatusBar: boolean; // Android: hide the clock / battery bar while Now Playing is open
+  // which sections Home shows
+  homeFeatured: boolean;
+  homeMadeForYou: boolean;
+  homeMoods: boolean;
+  homeRecent: boolean;
+  homeCharts: boolean;
+  homeGenres: boolean;
   sidebarWidth: number; // desktop sidebar, px
   sidebarCollapsed: boolean;
 };
@@ -57,6 +73,9 @@ type State = {
   hiddenArtists: string[];
   /** songs downloaded into the app (Android), newest first; the files live in the app (lib/downloads.ts) */
   downloads: Track[];
+  /** Replay: every song started, oldest first ([track id, day]), and those songs' details. Last 4000 plays. */
+  playLog: PlayLog;
+  playMeta: Record<string, Track>;
 };
 
 type Actions = {
@@ -95,8 +114,15 @@ const initial: State = {
   pinned: [],
   hiddenArtists: [],
   downloads: [],
-  settings: { theme: "editorial", country: "in", accent: "#c8603a", explicit: true, reduceMotion: false, autoplay: true, dataSaver: true, ytKey: "", sidebarWidth: 240, sidebarCollapsed: false },
+  playLog: [],
+  playMeta: {},
+  settings: { theme: "editorial", country: "in", accent: "#c8603a", explicit: true, reduceMotion: false, autoplay: true, dataSaver: true, ytKey: "", crossfade: 0, themeSystem: false, reduceBlur: false, syncedLyrics: true, blurLyrics: true, swipePlayNext: false, noRepeatAutoplay: false, hideStatusBar: false, homeFeatured: true, homeMadeForYou: true, homeMoods: true, homeRecent: true, homeCharts: true, homeGenres: true, sidebarWidth: 240, sidebarCollapsed: false },
 };
+
+const logHistory = (s: State, t: Track) => ({
+  history: [t, ...s.history.filter((x) => x.id !== t.id)].slice(0, 100),
+          plays: (({ plays }, a) => ({ ...plays, [a]: (plays[a] ?? 0) + 1 }))(s, t.artist.split(/,|&/)[0].trim()), // main artist only
+});
 
 const editPlaylist = (ps: Playlist[], id: string, fn: (p: Playlist) => Playlist) => ps.map((p) => (p.id === id ? fn(p) : p));
 
@@ -111,12 +137,12 @@ export const useLibrary = create<State & Actions>()(
         set((s) => {
           if (s.liked.some((x) => x.id === t.id)) return { liked: s.liked.filter((x) => x.id !== t.id) };
           // loving a song puts it in your Library too (unlove leaves it there, like Apple Music)
-          return { liked: [t, ...s.liked], songs: s.songs.some((x) => x.id === t.id) ? s.songs : [t, ...s.songs] };
+          return { liked: [t, ...s.liked], songs: s.songs.some((x) => x.id === t.id) ? s.songs : [...s.songs, t] }; // in the order you add them
         }),
 
       toggleSong: (t) =>
         set((s) => ({
-          songs: s.songs.some((x) => x.id === t.id) ? s.songs.filter((x) => x.id !== t.id) : [t, ...s.songs],
+          songs: s.songs.some((x) => x.id === t.id) ? s.songs.filter((x) => x.id !== t.id) : [...s.songs, t], // first added stays first
           hiddenArtists: s.hiddenArtists.filter((a) => a !== t.artistId), // saving a song by them brings them back
         })),
 
@@ -127,10 +153,14 @@ export const useLibrary = create<State & Actions>()(
         })),
 
       logPlay: (t) =>
-        set((s) => ({
-          history: [t, ...s.history.filter((x) => x.id !== t.id)].slice(0, 100),
-          plays: (({ plays }, a) => ({ ...plays, [a]: (plays[a] ?? 0) + 1 }))(s, t.artist.split(/,|&/)[0].trim()), // main artist only
-        })),
+        set((s) => {
+          const playLog: PlayLog = [...s.playLog, [t.id, dayOf()] as [string, number]].slice(-4000);
+          const kept = new Set(playLog.map(([id]) => id));
+          const playMeta = Object.fromEntries(Object.entries({ ...s.playMeta, [t.id]: t }).filter(([id]) => kept.has(id)));
+          return { playLog, playMeta, ...logHistory(s, t) };
+        }),
+
+      clearHistory: () => set({ history: [], plays: {}, playLog: [], playMeta: {} }),
 
       createPlaylist: (name, first) => {
         const id = crypto.randomUUID();
@@ -147,7 +177,6 @@ export const useLibrary = create<State & Actions>()(
 
       setSettings: (p) => set({ settings: { ...get().settings, ...p } }),
       setName: (name) => set({ name }),
-      clearHistory: () => set({ history: [], plays: {} }),
       addRecent: (r) => set((s) => ({ recentSearches: pushRecent(s.recentSearches, r) })),
       removeRecent: (key) => set((s) => ({ recentSearches: s.recentSearches.filter((x) => recentKey(x) !== key) })),
       clearRecents: () => set({ recentSearches: [] }),
@@ -176,13 +205,14 @@ export const useLibrary = create<State & Actions>()(
         libLoaded = true; // saved data is in memory now → writes are safe
       },
       // older saves lack new settings keys → fill them from defaults
-      version: 4,
+      version: 5,
       // v2 = editorial redesign: old Apple pink default → rust.
       migrate: (saved, v) => {
         const s = saved as Partial<State>;
         if (v < 2 && s.settings?.accent === "#fa2d48") s.settings.accent = "#c8603a";
         // (v3 used to reset black → rust; black is supported again via readableAccent, so it's left as chosen)
         if (v < 4) s.songs = [...(s.liked ?? [])]; // v4: Library songs start with everything already loved
+        if (v < 5) s.songs = [...(s.songs ?? [])].reverse(); // v5: songs listed in the order you added them (was newest first)
         return s as State & Actions;
       },
       merge: (saved, cur) => {

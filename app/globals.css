@@ -200,6 +200,51 @@ main {
   height: 20px;
 }
 
+/* Settings → Appearance → Reduce blur: frosted glass becomes a solid fill (lighter on slow phones) */
+.reduce-blur * {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* Now Playing transport buttons: soft press (shrink + a faint circle behind), springy release */
+.np-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.np-btn::before {
+  content: "";
+  position: absolute;
+  inset: -14px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.12);
+  opacity: 0;
+  transform: scale(0.7);
+  transition: opacity 0.25s, transform 0.25s;
+}
+.np-btn:active {
+  transform: scale(0.86);
+  transition-duration: 0.08s;
+}
+.np-btn:active::before {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* Phone: the mini player slides away while a menu / sheet is open (every one has a "Close menu" backdrop) and
+   comes back when it closes, like Spotify and Apple Music, so it never sits on top of a menu's options */
+.mini-player {
+  transition: translate 0.3s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.2s;
+}
+body:has(button[aria-label="Close menu"]) .mini-player {
+  translate: 0 calc(100% + 6rem);
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* Now Playing slides up like the iOS sheet */
 .np-enter {
   animation: np-in 0.45s cubic-bezier(0.32, 0.72, 0, 1);

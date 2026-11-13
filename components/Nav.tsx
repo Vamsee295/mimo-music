@@ -17,7 +17,6 @@ const main: Item[] = [
 ];
 const library: Item[] = [
   ["/library?tab=library", "Library", "library"],
-  ["/library?tab=all", "Songs", "note"],
   ["/library?tab=device", "Your Music", "device"],
   ["/library?tab=recent", "Recently Played", "clock"],
   ["/liked", "Liked Songs", "heart"],
@@ -66,7 +65,7 @@ const MAX = 380;
 const sbWidth = (collapsed: boolean, w: number) => `${collapsed ? RAIL : w}px`;
 
 export function Boot() {
-  const { accent, reduceMotion, sidebarCollapsed, sidebarWidth, theme } = useLibrary((s) => s.settings);
+  const { accent, reduceMotion, reduceBlur, sidebarCollapsed, sidebarWidth, theme, themeSystem } = useLibrary((s) => s.settings);
   useEffect(() => {
     usePlayer.persist.rehydrate();
     useLibrary.persist.rehydrate();
@@ -102,7 +101,20 @@ export function Boot() {
     // dark "islands" (song page, photo tiles, artist header) stay dark in both themes → they need the dark-safe accent
     document.documentElement.style.setProperty("--accent-dark", readableAccent(accent, "dark"));
     document.documentElement.classList.toggle("reduce-motion", reduceMotion);
-  }, [accent, reduceMotion, theme]);
+    document.documentElement.classList.toggle("reduce-blur", reduceBlur);
+  }, [accent, reduceMotion, reduceBlur, theme]);
+  // "System" theme: follow the phone's light / dark setting, now and whenever it changes
+  useEffect(() => {
+    if (!themeSystem) return;
+    const mq = matchMedia("(prefers-color-scheme: dark)");
+    const sync = () => {
+      const want = mq.matches ? "dark" : "editorial";
+      if (useLibrary.getState().settings.theme !== want) useLibrary.getState().setSettings({ theme: want });
+    };
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, [themeSystem]);
   useEffect(() => {
     const html = document.documentElement;
     html.classList.toggle("theme-dark", theme === "dark");
@@ -289,9 +301,8 @@ export function Avatar({ name, big }: { name: string; big?: boolean }) {
 
 export function TabBar() {
   const active = useActive();
-  const name = useLibrary((s) => s.name);
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 [view-transition-name:tabbar] grid grid-cols-5 border-t-[2.4px] border-[var(--line)] bg-paper/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-40 [view-transition-name:tabbar] grid grid-cols-4 border-t-[2.4px] border-[var(--line)] bg-paper/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden">
       {tabs.map(([href, label, icon]) => (
         <Link
           key={href}
@@ -302,17 +313,6 @@ export function TabBar() {
           {label}
         </Link>
       ))}
-      {/* "You": the profile, always in the same spot (Apple Music / Spotify keep it fixed too) */}
-      <Link
-        href="/account"
-        aria-label="Account"
-        className={`label-cond flex flex-col items-center gap-0.5 py-2 text-[12px] ${active("/account") || active("/settings") ? "text-accent" : "text-ink/55"}`}
-      >
-        <span className={`rounded-full ${active("/account") || active("/settings") ? "ring-2 ring-accent ring-offset-1 ring-offset-paper" : ""}`}>
-          <Avatar name={name} />
-        </span>
-        You
-      </Link>
     </nav>
   );
 }

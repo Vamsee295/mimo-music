@@ -1,22 +1,23 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import { useLibrary } from "@/lib/library";
 import { usePlayer, type Track } from "@/lib/store";
 import { Icon } from "./Icon";
 import { Explicit } from "./ui";
 import { Swipe, toast } from "./Swipe";
-import { askText } from "./Ask";
+import { LibraryPicker } from "./AddToLibrary";
 import { canDownload, download, removeDownload, useDownloading } from "@/lib/downloads";
 
 export const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
 /** Apple-style ⋯ menu. Desktop: popover. Phone: bottom sheet. */
 export function TrackMenu({ track, onRemove, removeLabel = "Remove from Playlist" }: { track: Track; onRemove?: () => void; removeLabel?: string }) {
-  const [open, setOpen] = useState<false | "main" | "playlists">(false);
+  const [open, setOpen] = useState<false | "main" | "library">(false);
+  const [at, setAt] = useState({ x: 0, y: 0 }); // computer: the menu opens by the ⋯ button
   const liked = useLibrary((s) => s.liked.some((t) => t.id === track.id));
   const saved = useLibrary((s) => s.songs.some((t) => t.id === track.id));
-  const playlists = useLibrary((s) => s.playlists);
   const isDownloaded = useLibrary((s) => s.downloads.some((t) => t.id === track.id));
   const downloading = useDownloading(track.id);
   const close = () => setOpen(false);
@@ -25,13 +26,26 @@ export function TrackMenu({ track, onRemove, removeLabel = "Remove from Playlist
 
   return (
     <div className="relative">
-      <button onClick={() => setOpen("main")} aria-label="More options" className="tap grid size-8 place-items-center text-ink/60 hover:text-ink">
+      <button
+        onClick={(e) => {
+          // kept inside the window: right-aligned to the button, flipped up when there's no room below
+          const r = e.currentTarget.getBoundingClientRect();
+          setAt({ x: Math.max(8, Math.min(r.right - 224, innerWidth - 232)), y: r.bottom + 360 > innerHeight ? Math.max(8, r.top - 368) : r.bottom + 4 });
+          setOpen("main");
+        }}
+        aria-label="More options" className="tap grid size-8 place-items-center text-ink/60 hover:text-ink">
         <Icon name="more" />
       </button>
-      {open && (
+      {/* Drawn at the top of the page, not inside the row: a swipeable row slides with a transform, and
+          that pinned the "fixed" sheet to the row — it opened below the screen, behind the player bar. */}
+      {open &&
+        createPortal(
         <>
-          <button aria-label="Close menu" className="fixed inset-0 z-50 cursor-default bg-black/40 md:bg-transparent" onClick={close} />
-          <div className="pop-in sheet brut fixed inset-x-3 bottom-3 z-50 overflow-hidden rounded-2xl bg-card py-1 text-[15px] md:absolute md:inset-x-auto md:bottom-auto md:right-0 md:top-9 md:w-56 md:rounded-xl md:text-sm">
+          <button aria-label="Close menu" className="fixed inset-0 z-[80] cursor-default bg-black/40 md:bg-transparent" onClick={close} />
+          <div
+            style={{ "--x": `${at.x}px`, "--y": `${at.y}px` } as CSSProperties}
+            className="pop-in sheet brut fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-[81] max-h-[80vh] overflow-y-auto rounded-2xl bg-card py-1 text-[15px] md:inset-x-auto md:bottom-auto md:left-[var(--x)] md:top-[var(--y)] md:w-56 md:rounded-xl md:text-sm"
+          >
             <div className="flex items-center gap-3 border-b border-ink/10 px-4 py-3 md:hidden">
               <img src={track.art} alt="" className="size-10 rounded" />
               <span className="min-w-0">
@@ -43,22 +57,13 @@ export function TrackMenu({ track, onRemove, removeLabel = "Remove from Playlist
               <>
                 <button className={item} onClick={act(() => (usePlayer.getState().playNext(track), toast(`“${track.title}” plays next`)))}>Play Next</button>
                 <button className={item} onClick={act(() => (usePlayer.getState().addToQueue(track), toast(`Added “${track.title}” to queue`)))}>Add to Queue</button>
-                <button
-                  className={item}
-                  onClick={act(() => {
-                    useLibrary.getState().toggleSong(track);
-                    toast(saved ? "Removed from Library" : "Added to Library");
-                  })}
-                >
+                <button className={item} onClick={() => setOpen("library")}>
                   <Icon name={saved ? "check" : "plus"} className="size-4 text-[var(--accent)]" />
-                  {saved ? "Remove from Library" : "Add to Library"}
+                  {saved ? "In Library" : "Add to Library"} <Icon name="right" className="ml-auto size-4" />
                 </button>
                 <button className={item} onClick={act(() => useLibrary.getState().toggleLike(track))}>
                   <Icon name={liked ? "heart" : "heartOutline"} className="size-4 text-[var(--accent)]" />
                   {liked ? "Unlove" : "Love"}
-                </button>
-                <button className={item} onClick={() => setOpen("playlists")}>
-                  Add to Playlist <Icon name="right" className="ml-auto size-4" />
                 </button>
                 {canDownload() && (
                   <button
@@ -83,35 +88,11 @@ export function TrackMenu({ track, onRemove, removeLabel = "Remove from Playlist
                 {track.artistId && <Link className={item} href={`/artist?id=${track.artistId}`} onClick={close}>Go to Artist</Link>}
               </>
             ) : (
-              <>
-                <button
-                  className={item}
-                  onClick={act(async () => {
-                    const n = await askText("New playlist", "My Playlist", "Create");
-                    if (n) {
-                      useLibrary.getState().createPlaylist(n, track);
-                      toast(`Added to “${n}”`);
-                    }
-                  })}
-                >
-                  <Icon name="plus" className="size-4" /> New Playlist…
-                </button>
-                {playlists.map((p) => (
-                  <button
-                    key={p.id}
-                    className={item}
-                    onClick={act(() => {
-                      useLibrary.getState().addToPlaylist(p.id, track);
-                      toast(`Added to “${p.name}”`);
-                    })}
-                  >
-                    {p.name}
-                  </button>
-                ))}
-              </>
+              <LibraryPicker track={track} row={item} onDone={close} />
             )}
           </div>
-        </>
+        </>,
+        document.body,
       )}
     </div>
   );
@@ -136,16 +117,22 @@ export function TrackRow({
   const current = usePlayer((s) => s.queue[s.index]?.id === track.id);
   const playing = usePlayer((s) => s.playing);
   const liked = useLibrary((s) => s.liked.some((t) => t.id === track.id));
+  const playNextOnSwipe = useLibrary((s) => s.settings.swipePlayNext);
 
   return (
     <Swipe
       dir="right"
-      label="Add to queue"
+      label={playNextOnSwipe ? "Play next" : "Add to queue"}
       icon="queue"
       tone="note"
       onSwipe={() => {
-        usePlayer.getState().addToQueue(track);
-        toast(`Added “${track.title}” to queue`);
+        if (playNextOnSwipe) {
+          usePlayer.getState().playNext(track);
+          toast(`“${track.title}” plays next`);
+        } else {
+          usePlayer.getState().addToQueue(track);
+          toast(`Added “${track.title}” to queue`);
+        }
       }}
     >
     <div

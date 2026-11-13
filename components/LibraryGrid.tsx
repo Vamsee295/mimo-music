@@ -16,7 +16,7 @@ import { toast } from "./Swipe";
 import { MoodCover } from "./MoodPage";
 import { MOODS, loadMood, type MoodId } from "@/lib/moods";
 
-type Kind = "playlist" | "album" | "artist";
+type Kind = "playlist" | "album" | "artist" | "song";
 type Act = { label: string; icon: IconName; run: () => void; danger?: boolean };
 type Item = {
   key: string;
@@ -24,6 +24,9 @@ type Item = {
   title: string;
   sub: string;
   href: string;
+  /** songs: tapping plays (from your saved songs, in order) instead of opening a page */
+  play?: () => void;
+  order?: number; // songs keep the order you added them in
   added: number;
   pinned?: boolean;
   art: (big: boolean) => ReactNode;
@@ -32,6 +35,7 @@ type Item = {
 
 const FILTERS = [
   ["playlist", "Playlists"],
+  ["song", "Songs"],
   ["album", "Albums"],
   ["artist", "Artists"],
 ] as const;
@@ -68,7 +72,7 @@ export function LibraryGrid() {
       kind: "playlist",
       pinned: true,
       title: "Liked Songs",
-      sub: `Playlist · ${lib.liked.length} songs`,
+      sub: `Playlist · ${lib.liked.length} ${lib.liked.length === 1 ? "song" : "songs"}`,
       href: "/liked",
       added: Infinity,
       acts: [
@@ -140,9 +144,54 @@ export function LibraryGrid() {
       ] as Act[],
     })),
   ];
-  // artists you've saved something by (Apple builds its Artists list the same way)
+  // songs you saved, each its own item (Spotify-style): tap plays from your songs in order, long-press for options
+  lib.songs.forEach((t, i) =>
+    items.push({
+      key: `song:${t.id}`,
+      kind: "song",
+      title: t.title,
+      sub: `Song · ${t.artist}`,
+      href: "/library",
+      play: () => usePlayer.getState().playList(lib.songs, i),
+      order: i,
+      added: 0,
+      art: (big) => (
+        <img
+          src={big ? t.art : t.art.replace("600x600", "100x100")}
+          alt=""
+          loading="lazy"
+          className="aspect-square w-full rounded-2xl border-[2.4px] border-[var(--line)] bg-ink/5 object-cover"
+        />
+      ),
+      acts: [
+        { label: "Play", icon: "play", run: () => usePlayer.getState().playList(lib.songs, i) },
+        { label: "Play next", icon: "queue", run: () => (usePlayer.getState().playNext(t), toast(`“${t.title}” plays next`)) },
+        { label: "Add to queue", icon: "list", run: () => (usePlayer.getState().addToQueue(t), toast(`Added “${t.title}” to queue`)) },
+        {
+          label: lib.liked.some((x) => x.id === t.id) ? "Unlove" : "Love",
+          icon: lib.liked.some((x) => x.id === t.id) ? "heart" : "heartOutline",
+          run: () => lib.toggleLike(t),
+        },
+        ...lib.playlists.slice(0, 5).map(
+          (p): Act => ({
+            label: `Add to “${p.name}”`,
+            icon: "plus",
+            run: () => {
+              if (p.tracks.some((x) => x.id === t.id)) return void toast(`Already in “${p.name}”`);
+              lib.addToPlaylist(p.id, t);
+              toast(`Added to “${p.name}”`);
+            },
+          }),
+        ),
+        ...(t.albumId ? ([{ label: "Go to album", icon: "library", run: () => router.push(`/album?id=${t.albumId}`) }] as Act[]) : []),
+        ...(t.artistId ? ([{ label: "Go to artist", icon: "user", run: () => router.push(`/artist?id=${t.artistId}`) }] as Act[]) : []),
+        { label: "Remove from Library", icon: "trash", danger: true, run: () => (lib.toggleSong(t), toast(`Removed “${t.title}”`)) },
+      ],
+    }),
+  );
+
+  // artists of albums you saved (saving a song no longer adds its artist here)
   const artists = new Map<string, string>();
-  [...lib.songs, ...lib.liked].forEach((t) => t.artistId && artists.set(t.artistId, t.artist.split(/,|&/)[0].trim()));
   lib.albums.forEach((a) => a.artistId && artists.set(a.artistId, a.artist));
   lib.hiddenArtists.forEach((id) => artists.delete(id));
   artists.forEach((name, id) =>
@@ -169,7 +218,9 @@ export function LibraryGrid() {
 
   const needle = q.trim().toLowerCase();
   items.forEach((it) => (it.pinned ||= lib.pinned.includes(it.key)));
-  const rank = (it: Item) => (it.key === "liked" ? -3 : it.key.startsWith("mood:") ? -2 : it.pinned ? lib.pinned.indexOf(it.key) : 1e6);
+  // Liked + moods first, then pinned, then playlists / albums / artists, then your songs in the order you added them
+  const rank = (it: Item) =>
+    it.key === "liked" ? -3 : it.key.startsWith("mood:") ? -2 : it.pinned ? lib.pinned.indexOf(it.key) : it.order !== undefined ? 2e6 + it.order : 1e6;
   const shown = items
     .filter((it) => (!filter || it.kind === filter) && (!needle || `${it.title} ${it.sub}`.toLowerCase().includes(needle)))
     .sort((a, b) => rank(a) - rank(b) || (sort === "az" ? a.title.localeCompare(b.title) : b.added - a.added));
@@ -186,7 +237,10 @@ export function LibraryGrid() {
   const linkProps = (it: Item) => ({
     href: it.href,
     onContextMenu: openMenu(it),
-    onClick: (e: MouseEvent) => longPressed.current && e.preventDefault(),
+    onClick: (e: MouseEvent) => {
+      if (longPressed.current || it.play) e.preventDefault(); // a song plays right here instead of opening a page
+      if (!longPressed.current) it.play?.();
+    },
   });
   const more = (it: Item, cls = "") => (
     <button onClick={openMenu(it)} aria-label={`More options for ${it.title}`} className={`tap grid size-8 shrink-0 place-items-center rounded-full text-ink/55 hover:bg-ink/[0.07] hover:text-ink ${cls}`}>

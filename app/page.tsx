@@ -1,4 +1,5 @@
 "use client";
+import { ProfileLink } from "@/components/ProfileLink";
 import Link from "next/link";
 import { ArtistAvatar } from "@/components/ArtistAvatar";
 import { FEATURED, topAlbums, topSongs } from "@/lib/api";
@@ -14,17 +15,24 @@ export default function Home() {
   const albums = useData("home-flow", () => topAlbums(undefined, 12));
   const songs = useData("home-songs", () => topSongs(undefined, 24));
   const history = useLibrary((s) => s.history);
+  const show = useLibrary((s) => s.settings); // Settings → Content: which sections Home shows
 
   return (
     <>
       {albums.data?.length ? (
         <StackHero albums={albums.data} songs={songs.data ?? []} />
-      ) : albums.error ? null : (
+      ) : albums.error ? (
+        // no hero to carry it: keep the profile button in reach
+        <div className="mb-3 flex justify-end md:hidden">
+          <ProfileLink />
+        </div>
+      ) : (
         <Skeleton className="mb-12 h-[420px] w-full" />
       )}
 
       <Ticker songs={songs.data ?? []} />
 
+      {show.homeFeatured && (
       <Section title="Featured Artists" kicker="Full catalogs" note="tamil + telugu, every song →">
         <Shelf>
           {FEATURED.map((a, i) => (
@@ -46,9 +54,11 @@ export default function Home() {
           ))}
         </Shelf>
       </Section>
+      )}
 
-      <MadeForYou />
+      {show.homeMadeForYou && <MadeForYou />}
 
+      {show.homeMoods && (
       <Section title="Study & Sleep" kicker="Background music" note="lofi to focus, calm to drift off →">
         <div className="grid gap-4 sm:grid-cols-2">
           {(Object.keys(MOODS) as MoodId[]).map((id) => (
@@ -67,21 +77,28 @@ export default function Home() {
           ))}
         </div>
       </Section>
+      )}
 
-      {history.length > 0 && (
+      {show.homeRecent && history.length > 0 && (
         <Section title="Recently Played" kicker="Your rotation" href="/library?tab=recent" note="on repeat lately ↓">
           <SongGrid tracks={history.slice(0, 12)} />
         </Section>
       )}
 
-      <Section title="Top Songs" kicker="The chart" href="/genre?id=0">
-        {songs.error ? <ErrorNote /> : songs.data ? <SongGrid tracks={songs.data} /> : <Skeleton rows={3} className="h-56 w-[30%]" />}
-      </Section>
+      {show.homeCharts && (
+        <Section title="Top Songs" kicker="The chart" href="/genre?id=0">
+          {songs.error ? <ErrorNote /> : songs.data ? <SongGrid tracks={songs.data} /> : <Skeleton rows={3} className="h-56 w-[30%]" />}
+        </Section>
+      )}
 
-      <GenreShelf genre={1262} title="Indian Hits" />
-      <GenreShelf genre={14} title="Pop Mix" />
-      <GenreShelf genre={18} title="Hip-Hop Mix" />
-      <GenreShelf genre={7} title="Electronic Mix" />
+      {show.homeGenres && (
+        <>
+          <GenreShelf genre={1262} title="Indian Hits" />
+          <GenreShelf genre={14} title="Pop Mix" />
+          <GenreShelf genre={18} title="Hip-Hop Mix" />
+          <GenreShelf genre={7} title="Electronic Mix" />
+        </>
+      )}
     </>
   );
 }

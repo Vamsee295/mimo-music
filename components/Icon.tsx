@@ -41,14 +41,26 @@ const paths = {
   note: "M12 3v10.55A4 4 0 1014 17V7h4V3h-6z",
   trash: "M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z",
   pin: "M16 3H8v2h1v6l-3 3v2h5v6h2v-6h5v-2l-3-3V5h1V3z",
+  // Now Playing transport (drawn with a round stroke → soft corners, like Apple Music / BitChord)
+  playSoft: "M8 5.6v12.8a1 1 0 001.5.86l10.4-6.4a1 1 0 000-1.72L9.5 4.74A1 1 0 008 5.6z",
+  pauseSoft: "M7 5h3v14H7zM14 5h3v14h-3z",
+  rewind: "M11.2 6.6v10.8L3.6 12zM20.4 6.6v10.8L12.8 12z",
+  forward: "M12.8 6.6v10.8l7.6-5.4zM3.6 6.6v10.8l7.6-5.4z",
+  // speech bubble with a quote mark (Apple Music's lyrics button) and a bulleted list (Up Next)
+  lyricsBubble:
+    "M5 3h14a2 2 0 012 2v10a2 2 0 01-2 2h-6.5L8 20.5V17H5a2 2 0 01-2-2V5a2 2 0 012-2zm3.5 5A1.5 1.5 0 007 9.5c0 .8.6 1.4 1.3 1.5-.1.6-.5 1.1-1.1 1.4l.5.8c1.5-.6 2.3-1.8 2.3-3.4A1.5 1.5 0 008.5 8zm5 0A1.5 1.5 0 0012 9.5c0 .8.6 1.4 1.3 1.5-.1.6-.5 1.1-1.1 1.4l.5.8c1.5-.6 2.3-1.8 2.3-3.4A1.5 1.5 0 0013.5 8z",
+  list: "M4 5.5h2.2v2.2H4zm4.5.1H20v2H8.5zM4 10.9h2.2v2.2H4zm4.5.1H20v2H8.5zM4 16.3h2.2v2.2H4zm4.5.1H20v2H8.5z",
 };
+
+// stroked as well as filled: a round line join turns every sharp corner into a soft one
+const SOFT = new Set<string>(["playSoft", "pauseSoft", "rewind", "forward"]);
 
 export type IconName = keyof typeof paths;
 
 export function Icon({ name, className = "size-5" }: { name: IconName; className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden>
-      <path d={paths[name]} />
+      <path d={paths[name]} {...(SOFT.has(name) ? { stroke: "currentColor", strokeWidth: 2.2, strokeLinejoin: "round" as const } : {})} />
     </svg>
   );
 }

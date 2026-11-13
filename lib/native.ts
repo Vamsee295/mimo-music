@@ -74,6 +74,17 @@ export type MediaAction = {
   duration?: number;
   key?: string; // "time": which stream it's about
 };
+/** The phone's equalizer on the native player (Your Music, downloads). Levels in millibels. */
+export type EqState = {
+  available: boolean;
+  enabled: boolean;
+  preset: number; // -1 = custom
+  min?: number;
+  max?: number;
+  bands?: { hz: number; level: number }[];
+  presets?: string[];
+};
+
 /** A song's audio-only stream: its (short-lived) URL + a stable name for that exact file (disk cache). */
 export type Stream = { url: string; key: string };
 type MimoMediaPlugin = {
@@ -85,7 +96,14 @@ type MimoMediaPlugin = {
   deleteDownload(o: { trackId: string }): Promise<void>;
   deleteAllDownloads(): Promise<void>;
   play(o: Stream & { position: number; playing: boolean }): Promise<void>;
-  setNext(o: Partial<Stream>): Promise<void>;
+  setNext(o: { items: Stream[] }): Promise<void>;
+  setRepeatOne(o: { on: boolean }): Promise<void>;
+  setSleep(o: { at: number }): Promise<void>;
+  setFade(o: { seconds: number }): Promise<void>;
+  eqInfo(): Promise<EqState>;
+  storage(): Promise<{ cache: number; downloads: number }>;
+  clearCache(): Promise<void>;
+  setEq(o: { enabled?: boolean; preset?: number; levels?: number[] }): Promise<EqState>;
   setPlaying(o: { playing: boolean }): Promise<void>;
   seek(o: { position: number }): Promise<void>;
   setVolume(o: { volume: number }): Promise<void>;
@@ -127,8 +145,15 @@ const quiet = (p: Promise<void>) => void p.catch(() => {});
  *  the phone can't slow them down with the screen off. Every call is a no-op on the website. */
 export const engine = {
   play: (s: Stream, position: number, playing: boolean) => isNative() && quiet(MimoMedia.play({ ...s, position, playing })),
-  /** preload the song after this one (gapless); nothing = clear it */
-  setNext: (s?: Stream) => isNative() && quiet(MimoMedia.setNext(s ?? {})),
+  /** the native-playable songs after this one, in order (gapless, keeps going if the page is asleep); [] = none */
+  setNext: (items: Stream[] = []) => isNative() && quiet(MimoMedia.setNext({ items })),
+  setRepeatOne: (on: boolean) => isNative() && quiet(MimoMedia.setRepeatOne({ on })),
+  /** native sleep timer: epoch ms to pause at, or null = off */
+  setSleep: (at: number | null) => isNative() && quiet(MimoMedia.setSleep({ at: at ?? 0 })),
+  /** crossfade between native songs: 0 = off, up to 12 seconds */
+  setFade: (seconds: number) => isNative() && quiet(MimoMedia.setFade({ seconds })),
+  eqInfo: () => (isNative() ? MimoMedia.eqInfo() : Promise.resolve(null)),
+  setEq: (o: { enabled?: boolean; preset?: number; levels?: number[] }) => (isNative() ? MimoMedia.setEq(o) : Promise.resolve(null)),
   setPlaying: (playing: boolean) => isNative() && quiet(MimoMedia.setPlaying({ playing })),
   seek: (position: number) => isNative() && quiet(MimoMedia.seek({ position })),
   setVolume: (volume: number) => isNative() && quiet(MimoMedia.setVolume({ volume })),
@@ -169,3 +194,14 @@ export async function nativeLocalCopy(trackId: string, blob: Blob): Promise<Stre
   await Filesystem.writeFile({ path: `downloads/${trackId.replace(/:/g, "_")}.audio`, data, directory: Directory.Data, recursive: true });
   return offlineStream(trackId);
 }
+
+/** Android: hide / show the clock + battery bar (Now Playing can hide it: Settings → Appearance). */
+export async function setStatusBarHidden(hidden: boolean) {
+  if (!isNative()) return;
+  const { StatusBar } = await import("@capacitor/status-bar");
+  await (hidden ? StatusBar.hide() : StatusBar.show()).catch(() => {});
+}
+
+/** Android: bytes used by the streaming cache and by songs kept inside the app (downloads + Your Music copies). */
+export const storageUse = () => (isNative() ? MimoMedia.storage().catch(() => null) : Promise.resolve(null));
+export const clearAudioCache = () => (isNative() ? MimoMedia.clearCache().catch(() => {}) : Promise.resolve());

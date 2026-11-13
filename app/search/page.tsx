@@ -9,9 +9,11 @@ import { recentKey, useLibrary, type Recent } from "@/lib/library";
 import { usePlayer } from "@/lib/store";
 import { TrackList } from "@/components/TrackRow";
 import { Icon } from "@/components/Icon";
+import { Swipe, toast } from "@/components/Swipe";
 import { AlbumCard, ErrorNote, PageHeader, Section, Shelf, Skeleton } from "@/components/ui";
 
 export default function SearchPage() {
+  const playNextOnSwipe = useLibrary((s) => s.settings.swipePlayNext);
   const router = useRouter();
   const urlQ = useSearchParams().get("q") ?? "";
   const [q, setQ] = useState(urlQ);
@@ -93,6 +95,7 @@ export default function SearchPage() {
           )}
           {res.data.songs.length > 0 && (
             <Section title="Songs">
+              <p className="-mt-2 mb-2 text-[13px] text-ink/45">{playNextOnSwipe ? "Swipe a song right to play it next →" : "Swipe a song right to add it to your queue →"}</p>
               <TrackList tracks={res.data.songs} single onPick={(track) => remember({ kind: "song", track })} />
             </Section>
           )}
@@ -116,6 +119,7 @@ export default function SearchPage() {
 /** What you opened from Search before: tap to open it again (a song plays straight away), X to forget it. */
 function RecentSearches({ onQuery }: { onQuery: (q: string) => void }) {
   const recents = useLibrary((s) => s.recentSearches);
+  const playNextOnSwipe = useLibrary((s) => s.settings.swipePlayNext);
   const { addRecent, removeRecent, clearRecents } = useLibrary.getState();
   const router = useRouter();
   if (!recents.length) return null;
@@ -145,8 +149,8 @@ function RecentSearches({ onQuery }: { onQuery: (q: string) => void }) {
                   ? [r.album.title, `Album · ${r.album.artist}`]
                   : [r.q, "Search"];
           const art = r.kind === "song" ? r.track.art : r.kind === "album" ? r.album.art : "";
-          return (
-            <li key={key} className="flex items-center gap-1">
+          const row = (
+            <div className="flex items-center gap-1 bg-paper">
               <button onClick={() => open(r)} className="tap flex min-w-0 flex-1 items-center gap-3 py-2 text-left">
                 {art ? (
                   <img src={art.replace("600x600", "120x120")} alt="" className="size-12 shrink-0 rounded-lg bg-ink/5 object-cover" />
@@ -165,6 +169,32 @@ function RecentSearches({ onQuery }: { onQuery: (q: string) => void }) {
               <button onClick={() => removeRecent(key)} aria-label={`Remove ${title} from recent searches`} className="tap tap-lg grid size-10 shrink-0 place-items-center text-ink/45 hover:text-ink">
                 <Icon name="close" className="size-4" />
               </button>
+            </div>
+          );
+          // songs: swipe right to add to the queue, same as search results
+          return (
+            <li key={key}>
+              {r.kind === "song" ? (
+                <Swipe
+                  dir="right"
+                  label={playNextOnSwipe ? "Play next" : "Add to queue"}
+                  icon="queue"
+                  tone="note"
+                  onSwipe={() => {
+                    if (playNextOnSwipe) {
+                      usePlayer.getState().playNext(r.track);
+                      toast(`“${r.track.title}” plays next`);
+                    } else {
+                      usePlayer.getState().addToQueue(r.track);
+                      toast(`Added “${r.track.title}” to queue`);
+                    }
+                  }}
+                >
+                  {row}
+                </Swipe>
+              ) : (
+                row
+              )}
             </li>
           );
         })}

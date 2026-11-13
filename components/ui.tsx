@@ -1,4 +1,5 @@
 "use client";
+import { ProfileLink } from "./ProfileLink";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { getAlbum, topAlbums, type Album } from "@/lib/api";
@@ -22,8 +23,11 @@ export function PageHeader({
   children?: ReactNode;
 }) {
   return (
-    <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
-      <div className="min-w-0">
+    <header className="relative mb-8 flex flex-wrap items-end justify-between gap-4">
+      <div className="absolute right-0 top-0 md:hidden">
+        <ProfileLink />
+      </div>
+      <div className="min-w-0 max-md:pr-12">
         {eyebrow && <p className="eyebrow mb-2">{eyebrow}</p>}
         <h1 className="display text-[44px] md:text-[72px]">
           {title}
@@ -36,7 +40,7 @@ export function PageHeader({
         </h1>
         {note && <p className="note mt-2 -rotate-1">{note}</p>}
       </div>
-      {/* the account lives in one fixed place: the tab bar on phones, the sidebar on laptops */}
+      {/* the account lives in one fixed place: top right on phones (ProfileLink above), the sidebar on laptops */}
       {children && <div className="flex items-center gap-3">{children}</div>}
     </header>
   );

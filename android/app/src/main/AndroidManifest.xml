@@ -34,6 +34,18 @@
             android:name=".MimoActionReceiver"
             android:exported="false" />
 
+        <!-- Android Auto / media browsers: connect to Mimo's media session (MimoBrowserService) -->
+        <service
+            android:name=".MimoBrowserService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
