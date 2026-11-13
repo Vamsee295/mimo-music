@@ -6,6 +6,8 @@ import { useLibrary } from "@/lib/library";
 import { RANGES, dayOf, replay, type Range } from "@/lib/replay";
 import { Icon } from "@/components/Icon";
 import { PageHeader, PlayShuffle } from "@/components/ui";
+import { shareImage } from "@/lib/native";
+import { replayCard } from "@/lib/replayCard";
 
 export default function ReplayPage() {
   const log = useLibrary((s) => s.playLog);
@@ -44,8 +46,8 @@ export default function ReplayPage() {
           <div className="mb-8 grid grid-cols-3 gap-3">
             {(
               [
+                ["Minutes", data.minutes],
                 ["Plays", data.plays],
-                ["Songs", data.songs.length],
                 ["Artists", data.artists.length],
               ] as const
             ).map(([label, n]) => (
@@ -56,33 +58,50 @@ export default function ReplayPage() {
             ))}
           </div>
 
+          <button
+            onClick={async () => {
+              const label = RANGES.find((r) => r[0] === range)![1];
+              const url = await replayCard(label, data);
+              await shareImage(`mimo-replay-${range}.png`, url, `My Mimo Replay · ${label}`);
+            }}
+            className="brut brut-press label-cond mb-8 flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-3 text-[17px] text-paper"
+          >
+            <Icon name="share" className="size-5" /> Share my Replay
+          </button>
+
           <div className="mb-4 flex items-center justify-between gap-3">
             <h2 className="display text-[30px]">Top Songs</h2>
             <PlayShuffle tracks={songs.map((s) => s.track)} />
           </div>
           <ol className="mb-10 space-y-1">
-            {songs.map(({ track, n }, i) => (
+            {songs.map(({ track, n, ...s }, i) => (
               <li key={track.id} className="flex items-center gap-3 border-b-2 border-dashed border-ink/12 py-2">
                 <span className="w-6 text-right font-mono text-sm text-accent">{i + 1}</span>
-                <img src={track.art.replace("600x600", "100x100")} alt="" loading="lazy" className="size-11 shrink-0 rounded-lg border-2 border-[var(--line)] bg-ink/5" />
+                <img src={track.art ? track.art.replace("600x600", "100x100") : undefined} alt="" loading="lazy" className="size-11 shrink-0 rounded-lg border-2 border-[var(--line)] bg-ink/5" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[15px] font-medium">{track.title}</span>
                   <span className="block truncate text-[13px] text-ink/50">{track.artist}</span>
                 </span>
-                <span className="shrink-0 font-mono text-xs text-ink/50">{n} {n === 1 ? "play" : "plays"}</span>
+                <span className="shrink-0 text-right font-mono text-xs text-ink/50">
+                  {n} {n === 1 ? "play" : "plays"}
+                  {s.minutes > 0 && <span className="block">{s.minutes} min</span>}
+                </span>
               </li>
             ))}
           </ol>
 
           <h2 className="display mb-4 text-[30px]">Top Artists</h2>
           <ol className="space-y-2">
-            {artists.map(({ name, n }, i) => (
+            {artists.map(({ name, n, minutes }, i) => (
               <li key={name} className="flex items-center gap-3">
                 <span className="w-6 text-right font-mono text-sm text-accent">{i + 1}</span>
                 <div className="flex-1">
                   <div className="flex justify-between text-sm">
                     <span>{name}</span>
-                    <span className="text-ink/40">{n} {n === 1 ? "play" : "plays"}</span>
+                    <span className="text-ink/40">
+                      {n} {n === 1 ? "play" : "plays"}
+                      {minutes > 0 && ` · ${minutes} min`}
+                    </span>
                   </div>
                   <div className="mt-1 h-3 overflow-hidden rounded-full border-2 border-[var(--line)]">
                     <div className="h-full rounded-full bg-[var(--accent)]" style={{ width: `${(n / maxArtist) * 100}%` }} />

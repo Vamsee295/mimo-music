@@ -24,12 +24,11 @@ export function PageHeader({
 }) {
   return (
     <header className="relative mb-8 flex flex-wrap items-end justify-between gap-4">
-      <div className="absolute right-0 top-0 md:hidden">
-        <ProfileLink />
-      </div>
-      <div className="min-w-0 max-md:pr-12">
+      <div className="min-w-0 flex-1">
         {eyebrow && <p className="eyebrow mb-2">{eyebrow}</p>}
-        <h1 className="display text-[44px] md:text-[72px]">
+        {/* phones: the profile button sits on the title's row, lined up with its first line */}
+        <div className="flex items-start justify-between gap-3">
+        <h1 className="display min-w-0 text-[44px] md:text-[72px]">
           {title}
           {hl && (
             <>
@@ -38,10 +37,12 @@ export function PageHeader({
             </>
           )}
         </h1>
+          <ProfileLink className="mt-1" />
+        </div>
         {note && <p className="note mt-2 -rotate-1">{note}</p>}
       </div>
       {/* the account lives in one fixed place: top right on phones (ProfileLink above), the sidebar on laptops */}
-      {children && <div className="flex items-center gap-3">{children}</div>}
+      {children && <div className="flex items-center gap-3 max-md:w-full">{children}</div>}
     </header>
   );
 }

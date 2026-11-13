@@ -63,6 +63,8 @@ const SETTING_TYPES = {
   swipePlayNext: "boolean",
   noRepeatAutoplay: "boolean",
   hideStatusBar: "boolean",
+  queueHistory: "boolean",
+  loudness: "boolean",
   homeFeatured: "boolean",
   homeMadeForYou: "boolean",
   homeMoods: "boolean",

@@ -11,7 +11,7 @@ const lib = {
   playlists: [{ id: "p1", name: "Mix", created: 1, tracks: [t("2")], desc: "late night" }],
   history: [t("2")],
   listening: { "2026-11": { seconds: 600, artists: { A: 600 } } },
-  settings: { theme: "dark" as const, country: "in", accent: "#2f6f6a", explicit: true, reduceMotion: false, autoplay: true, dataSaver: true, ytKey: "AIzaSECRET", crossfade: 0, themeSystem: false, reduceBlur: false, syncedLyrics: true, blurLyrics: true, swipePlayNext: false, noRepeatAutoplay: false, hideStatusBar: false, homeFeatured: true, homeMadeForYou: true, homeMoods: true, homeRecent: true, homeCharts: true, homeGenres: true, sidebarWidth: 240, sidebarCollapsed: false },
+  settings: { theme: "dark" as const, country: "in", accent: "#2f6f6a", explicit: true, reduceMotion: false, autoplay: true, dataSaver: true, ytKey: "AIzaSECRET", crossfade: 0, themeSystem: false, reduceBlur: false, syncedLyrics: true, blurLyrics: true, swipePlayNext: false, noRepeatAutoplay: false, hideStatusBar: false, queueHistory: true, loudness: false, homeFeatured: true, homeMadeForYou: true, homeMoods: true, homeRecent: true, homeCharts: true, homeGenres: true, sidebarWidth: 240, sidebarCollapsed: false },
 };
 
 // round trip keeps everything except the API key

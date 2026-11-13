@@ -69,9 +69,9 @@ type SectionId = "youtube" | "playback" | "content" | "appearance" | "storage" |
 // The Settings home list. `words` is what the search box matches (every option inside the section).
 const SECTIONS: { id: SectionId; title: string; hint: string; icon: IconName; words: string }[] = [
   { id: "youtube", title: "Full songs (YouTube)", hint: "Your free key that plays whole songs", icon: "play", words: "youtube key api full songs google test" },
-  { id: "playback", title: "Playback", hint: "Autoplay, swipe action, crossfade, equalizer", icon: "playSoft", words: "autoplay repeat swipe play next queue crossfade equalizer sound bass" },
+  { id: "playback", title: "Playback", hint: "Autoplay, queue, crossfade, loudness, equalizer", icon: "playSoft", words: "autoplay repeat swipe play next queue history crossfade equalizer sound bass loudness volume level normalize normalise" },
   { id: "content", title: "Content", hint: "Region, explicit songs, what Home shows", icon: "grid", words: "country region explicit home sections featured artists made for you study sleep recently played top songs charts genre mixes hide" },
-  { id: "appearance", title: "Appearance", hint: "Theme, colour, motion, lyrics", icon: "pencil", words: "theme dark light system editorial accent colour color motion animation blur lyrics synced status bar" },
+  { id: "appearance", title: "Appearance", hint: "Theme, colour, motion, lyrics", icon: "pencil", words: "theme dark light system editorial accent colour color motion animation blur lyrics synced status bar english letters romanize transliterate telugu tamil hindi" },
   { id: "storage", title: "Storage", hint: "Cache, history, reset", icon: "device", words: "cache clear storage space history recently played playing next reset erase library downloads" },
   { id: "data", title: "Your data", hint: "Replay, backup and restore", icon: "clock", words: "replay top songs artists stats backup restore export import" },
   { id: "about", title: "About", hint: "Mimo · free music app", icon: "info", words: "about version catalog" },
@@ -181,6 +181,9 @@ function SectionBody({ id }: { id: SectionId }) {
           <Row label="Don't repeat songs" hint="Autoplay won't suggest a song already played or suggested since you opened Mimo">
             <Toggle label="Don't repeat songs" on={settings.noRepeatAutoplay} onChange={(noRepeatAutoplay) => setSettings({ noRepeatAutoplay })} />
           </Row>
+          <Row label="Show queue history" hint="Up Next also shows the last 25 songs played; tap one to go back">
+            <Toggle label="Show queue history" on={settings.queueHistory} onChange={(queueHistory) => setSettings({ queueHistory })} />
+          </Row>
           <Row label="Swipe a song right" hint={settings.swipePlayNext ? "Plays it right after the current song" : "Adds it to the end of your queue"}>
             <Segmented
               value={settings.swipePlayNext ? "next" : "queue"}
@@ -189,25 +192,24 @@ function SectionBody({ id }: { id: SectionId }) {
             />
           </Row>
         </Group>
+        <Group title="Transitions">
+          <Row label="Crossfade" hint={settings.crossfade ? `Each song fades out over its last ${settings.crossfade}s and the next fades in` : "Songs change straight away"}>
+            <Segmented
+              value={String(settings.crossfade) as "0" | "5" | "6" | "7" | "8"}
+              options={[["0", "Off"], ["5", "5s"], ["6", "6s"], ["7", "7s"], ["8", "8s"]] as const}
+              onChange={(v) => setSettings({ crossfade: Number(v) })}
+            />
+          </Row>
+        </Group>
         {native ? (
           <Group title="Sound (Your Music & downloads)">
-            <Row label="Crossfade" hint={settings.crossfade ? `${settings.crossfade}s fade between songs` : "Off"}>
-              <input
-                type="range"
-                min={0}
-                max={12}
-                step={1}
-                value={settings.crossfade}
-                aria-label="Crossfade seconds"
-                onChange={(e) => setSettings({ crossfade: Number(e.target.value) })}
-                className="range w-36"
-                style={{ "--p": `${(settings.crossfade / 12) * 100}%` } as CSSProperties}
-              />
+            <Row label="Loudness levelling" hint="Plays every song at about the same volume (Android 9 and newer)">
+              <Toggle label="Loudness levelling" on={settings.loudness} onChange={(loudness) => setSettings({ loudness })} />
             </Row>
             <EqualizerRows />
           </Group>
         ) : (
-          <p className="px-1 text-sm text-ink/45">Crossfade and the equalizer are in the Android app (for Your Music and downloads).</p>
+          <p className="px-1 text-sm text-ink/45">Loudness levelling and the equalizer are in the Android app (for Your Music and downloads).</p>
         )}
       </>
     );

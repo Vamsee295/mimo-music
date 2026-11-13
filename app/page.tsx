@@ -2,7 +2,8 @@
 import { ProfileLink } from "@/components/ProfileLink";
 import Link from "next/link";
 import { ArtistAvatar } from "@/components/ArtistAvatar";
-import { FEATURED, topAlbums, topSongs } from "@/lib/api";
+import { FEATURED, getArtist, topAlbums, topSongs } from "@/lib/api";
+import { replay } from "@/lib/replay";
 import { useLibrary } from "@/lib/library";
 import { useData } from "@/lib/useData";
 import { StackHero, Ticker } from "@/components/Hero";
@@ -16,6 +17,13 @@ export default function Home() {
   const songs = useData("home-songs", () => topSongs(undefined, 24));
   const history = useLibrary((s) => s.history);
   const show = useLibrary((s) => s.settings); // Settings → Content: which sections Home shows
+  const playLog = useLibrary((s) => s.playLog);
+  const playMeta = useLibrary((s) => s.playMeta);
+  // your top 2 artists from real plays (30s+), for the "Because you like" rows
+  const topArtists = replay(playLog, playMeta, 0)
+    .artists.slice(0, 2)
+    .map((a) => ({ name: a.name, id: Object.values(playMeta).find((t) => t.artist.split(/,|&/)[0].trim() === a.name && t.artistId)?.artistId }))
+    .filter((a): a is { name: string; id: string } => !!a.id);
 
   return (
     <>
@@ -31,6 +39,19 @@ export default function Home() {
       )}
 
       <Ticker songs={songs.data ?? []} />
+
+      {/* your listening first (Spotify / Apple Music): mixes, what you played, more from artists you love.
+          Charts and genres follow. With no history yet these are empty and Home starts with the charts. */}
+      {show.homeMadeForYou && <MadeForYou />}
+
+      {show.homeRecent && history.length > 0 && (
+        <Section title="Recently Played" kicker="Your rotation" href="/library?tab=recent" note="on repeat lately ↓">
+          <SongGrid tracks={history.slice(0, 12)} />
+        </Section>
+      )}
+
+      {show.homeMadeForYou && topArtists.map((a) => <BecauseYouLike key={a.id} id={a.id} name={a.name} />)}
+
 
       {show.homeFeatured && (
       <Section title="Featured Artists" kicker="Full catalogs" note="tamil + telugu, every song →">
@@ -56,8 +77,6 @@ export default function Home() {
       </Section>
       )}
 
-      {show.homeMadeForYou && <MadeForYou />}
-
       {show.homeMoods && (
       <Section title="Study & Sleep" kicker="Background music" note="lofi to focus, calm to drift off →">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -79,12 +98,6 @@ export default function Home() {
       </Section>
       )}
 
-      {show.homeRecent && history.length > 0 && (
-        <Section title="Recently Played" kicker="Your rotation" href="/library?tab=recent" note="on repeat lately ↓">
-          <SongGrid tracks={history.slice(0, 12)} />
-        </Section>
-      )}
-
       {show.homeCharts && (
         <Section title="Top Songs" kicker="The chart" href="/genre?id=0">
           {songs.error ? <ErrorNote /> : songs.data ? <SongGrid tracks={songs.data} /> : <Skeleton rows={3} className="h-56 w-[30%]" />}
@@ -100,5 +113,16 @@ export default function Home() {
         </>
       )}
     </>
+  );
+}
+
+/** "Because you like {artist}": that artist's top songs, from your listening. */
+function BecauseYouLike({ id, name }: { id: string; name: string }) {
+  const { data } = useData(`artist:${id}`, () => getArtist(id));
+  if (!data?.songs.length) return null;
+  return (
+    <Section title={`Because you like ${name}`} kicker="For you" href={`/artist?id=${id}`}>
+      <SongGrid tracks={data.songs.slice(0, 12)} />
+    </Section>
   );
 }

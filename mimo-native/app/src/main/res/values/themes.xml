@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Mimo</string>
+    <!-- window colour before Compose draws: the editorial paper (app/globals.css) -->
+    <style name="Theme.Mimo" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/paper</item>
+    </style>
+    <color name="paper">#F5EFE6</color>
+</resources>

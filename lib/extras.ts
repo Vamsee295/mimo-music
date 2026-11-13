@@ -1,4 +1,4 @@
-// Now Playing extras: lyrics (LRCLIB, free, no key) and artist bio (Wikipedia summary API).
+// Now Playing extras: lyrics (LRCLIB, then lyrics.ovh; free, no key) and artist bio (Wikipedia summary API).
 import type { Track } from "./store";
 
 export type LyricLine = { t: number; text: string };
@@ -69,10 +69,23 @@ export function getLyrics(t: Track): Promise<Lyrics | null> {
       if (best?.syncedLyrics || best?.instrumental) return toLyrics(best);
       fallback ??= best;
     }
+    if (fallback) return toLyrics(fallback);
+    // LRCLIB has nothing: a second free source (lyrics.ovh, plain lyrics only, no timing)
+    const plain = await lyricsOvh(artist, title).catch(() => undefined);
+    if (plain) return { synced: null, plain, instrumental: false };
     // every lookup failed (offline): throw, so the cache forgets it and a later play tries again
-    if (failed === tries.length) throw new Error("lrclib unreachable");
-    return fallback ? toLyrics(fallback) : null;
+    if (failed === tries.length && plain === undefined) throw new Error("lyrics unreachable");
+    return null;
   });
+}
+
+/** lyrics.ovh: free, no key, plain text. "" = they don't have it; throws when unreachable. */
+async function lyricsOvh(artist: string, title: string): Promise<string> {
+  const r = await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`, { signal: AbortSignal.timeout(8000) });
+  if (r.status === 404) return "";
+  if (!r.ok) throw new Error(`lyrics.ovh ${r.status}`);
+  const j = (await r.json()) as { lyrics?: string };
+  return (j.lyrics ?? "").replace(/\r\n/g, "\n").trim();
 }
 
 const toLyrics = (row: LrcRow): Lyrics => ({

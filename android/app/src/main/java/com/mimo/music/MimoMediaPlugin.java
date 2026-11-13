@@ -62,6 +62,8 @@ public class MimoMediaPlugin extends Plugin {
     static final String ACTION_PREV = "com.mimo.music.PREV";
     static final String ACTION_TOGGLE = "com.mimo.music.TOGGLE";
     static final String ACTION_NEXT = "com.mimo.music.NEXT";
+    static final String ACTION_LIKE = "com.mimo.music.LIKE";
+    static final String CUSTOM_LIKE = "mimo.like"; // lock-screen / system media controls ♥
 
     private static MimoMediaPlugin instance;
     /** the notification MimoPlaybackService shows when it starts */
@@ -84,6 +86,7 @@ public class MimoMediaPlugin extends Plugin {
     private boolean serviceRunning = false;
 
     private String title = "", artist = "", album = "", artUrl = "";
+    private boolean liked = false; // the current song is in Liked Songs (♥ in the notification)
     private Bitmap art;
     private long durationMs = 0, positionMs = 0;
     private boolean playing = false;
@@ -111,12 +114,16 @@ public class MimoMediaPlugin extends Plugin {
         eqOn = prefs.getBoolean("eqOn", false);
         eqLevels = prefs.getString("eqLevels", "");
         eqPreset = prefs.getInt("eqPreset", -1);
+        levelOn = prefs.getBoolean("levelOn", false);
         fadeMs = prefs.getInt("fadeMs", 0);
         session.setCallback(new MediaSessionCompat.Callback() {
             @Override public void onPlay() { emit("play", -1); }
             @Override public void onPause() { emit("pause", -1); }
             @Override public void onStop() { emit("pause", -1); }
             @Override public void onSkipToNext() { emit("next", -1); }
+            @Override public void onCustomAction(String action, android.os.Bundle extras) {
+                if (CUSTOM_LIKE.equals(action)) emit("like", -1);
+            }
             @Override public void onSkipToPrevious() { emit("prev", -1); }
             @Override public void onSeekTo(long pos) { emit("seek", pos / 1000.0); }
         });
@@ -141,6 +148,7 @@ public class MimoMediaPlugin extends Plugin {
         if (ACTION_PREV.equals(action)) instance.emit("prev", -1);
         else if (ACTION_NEXT.equals(action)) instance.emit("next", -1);
         else if (ACTION_TOGGLE.equals(action)) instance.emit(instance.playing ? "pause" : "play", -1);
+        else if (ACTION_LIKE.equals(action)) instance.emit("like", -1);
     }
 
     @PluginMethod
@@ -157,6 +165,7 @@ public class MimoMediaPlugin extends Plugin {
         // the native player knows the real position; the page's copy goes stale while the screen is off
         if (exo != null && exo.getMediaItemCount() > 0 && exo.getPlaybackState() != Player.STATE_IDLE) positionMs = exo.getCurrentPosition();
         playing = Boolean.TRUE.equals(call.getBoolean("playing", false));
+        liked = Boolean.TRUE.equals(call.getBoolean("liked", false));
         String url = call.getString("artwork", "");
         if (url == null) url = "";
         if (!url.equals(artUrl)) {
@@ -167,6 +176,7 @@ public class MimoMediaPlugin extends Plugin {
         session.setActive(true);
         applySession();
         show();
+        MimoWidget.refresh(getContext(), title, artist, playing, art, true);
         holdLocks(playing);
         call.resolve();
     }
@@ -218,6 +228,9 @@ public class MimoMediaPlugin extends Plugin {
                 | PlaybackStateCompat.ACTION_SEEK_TO | PlaybackStateCompat.ACTION_STOP)
             // speed 1 while playing: the system advances the seek bar by itself between updates
             .setState(playing ? PlaybackStateCompat.STATE_PLAYING : PlaybackStateCompat.STATE_PAUSED, positionMs, playing ? 1f : 0f)
+            // ♥ on the lock screen / system media controls (Android 13+ draws these from the session)
+            .addCustomAction(new PlaybackStateCompat.CustomAction.Builder(CUSTOM_LIKE, liked ? "Unlove" : "Love",
+                liked ? R.drawable.ic_heart : R.drawable.ic_heart_outline).build())
             .build());
     }
 
@@ -241,12 +254,13 @@ public class MimoMediaPlugin extends Plugin {
             .setOnlyAlertOnce(true)
             .setSilent(true)
             .setOngoing(playing)
+            .addAction(liked ? R.drawable.ic_heart : R.drawable.ic_heart_outline, liked ? "Unlove" : "Love", button(ACTION_LIKE, 4))
             .addAction(android.R.drawable.ic_media_previous, "Previous", button(ACTION_PREV, 1))
             .addAction(playing ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play, playing ? "Pause" : "Play", button(ACTION_TOGGLE, 2))
             .addAction(android.R.drawable.ic_media_next, "Next", button(ACTION_NEXT, 3))
             .setStyle(new androidx.media.app.NotificationCompat.MediaStyle()
                 .setMediaSession(session.getSessionToken())
-                .setShowActionsInCompactView(0, 1, 2));
+                .setShowActionsInCompactView(1, 2, 3)); // compact: ⏮ ⏯ ⏭ (♥ shows when expanded)
         current = b.build();
         if (!serviceRunning) {
             ContextCompat.startForegroundService(ctx, new Intent(ctx, MimoPlaybackService.class));
@@ -679,6 +693,7 @@ public class MimoMediaPlugin extends Plugin {
     private void attachEq(int sessionId) {
         releaseEq();
         if (sessionId == C.AUDIO_SESSION_ID_UNSET || sessionId == 0) return;
+        attachLevel(sessionId);
         try {
             eq = new android.media.audiofx.Equalizer(0, sessionId);
             applyEq();
@@ -688,6 +703,7 @@ public class MimoMediaPlugin extends Plugin {
     }
 
     private void releaseEq() {
+        releaseLevel();
         if (eq != null) {
             try {
                 eq.release();
@@ -731,6 +747,59 @@ public class MimoMediaPlugin extends Plugin {
         for (short i = 0; i < eq.getNumberOfPresets(); i++) presets.put(eq.getPresetName(i));
         r.put("presets", presets);
         return r;
+    }
+
+    // ── Loudness levelling (native songs, Android 9+): a gentle compressor lifts quiet passages and tames loud
+    // ones, and a limiter stops anything clipping, so songs play at about the same level. It works live, as the
+    // song plays (no per-song measuring like Spotify's), so it's close to, not exactly, normalisation.
+    // ponytail: fixed curve (threshold -26 dB, ratio 3:1, +8 dB make-up, limit -2 dB); tune here if songs pump
+    private android.media.audiofx.DynamicsProcessing level;
+    private boolean levelOn = false;
+
+    private void attachLevel(int sessionId) {
+        releaseLevel();
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return;
+        try {
+            android.media.audiofx.DynamicsProcessing.Config cfg = new android.media.audiofx.DynamicsProcessing.Config.Builder(
+                android.media.audiofx.DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION, 2,
+                false, 0, true, 1, false, 0, true).build();
+            level = new android.media.audiofx.DynamicsProcessing(0, sessionId, cfg);
+            level.setMbcBandAllChannelsTo(0, new android.media.audiofx.DynamicsProcessing.MbcBand(
+                true, 20000f, 10f, 250f, 3f, -26f, 6f, -90f, 1f, 0f, 8f));
+            level.setLimiterAllChannelsTo(new android.media.audiofx.DynamicsProcessing.Limiter(
+                true, true, 0, 1f, 60f, 10f, -2f, 0f));
+            level.setEnabled(levelOn);
+        } catch (RuntimeException e) {
+            level = null; // this phone doesn't offer it to apps: music plays untouched
+        }
+    }
+
+    private void releaseLevel() {
+        if (level != null) {
+            try {
+                level.release();
+            } catch (RuntimeException ignored) {}
+            level = null;
+        }
+    }
+
+    /** on/off; answers whether this phone supports it */
+    @PluginMethod
+    public void setLevel(final PluginCall call) {
+        final boolean on = Boolean.TRUE.equals(call.getBoolean("on", false));
+        main.post(() -> {
+            levelOn = on;
+            getContext().getSharedPreferences("mimo", Context.MODE_PRIVATE).edit().putBoolean("levelOn", on).apply();
+            if (level == null && exo != null) attachLevel(exo.getAudioSessionId());
+            if (level != null) {
+                try {
+                    level.setEnabled(on);
+                } catch (RuntimeException ignored) {}
+            }
+            JSObject r = new JSObject();
+            r.put("supported", Build.VERSION.SDK_INT >= Build.VERSION_CODES.P);
+            call.resolve(r);
+        });
     }
 
     /** bands (Hz + current level), level range, the phone's presets, on/off */
@@ -913,6 +982,7 @@ public class MimoMediaPlugin extends Plugin {
                 art = result;
                 applySession();
                 if (serviceRunning) show();
+                MimoWidget.refresh(getContext(), title, artist, playing, art, true);
             });
         });
     }
@@ -925,6 +995,7 @@ public class MimoMediaPlugin extends Plugin {
         if (exo != null) exo.release();
         exo = null;
         if (session != null) session.setActive(false); // shared with Android Auto: kept, just inactive
+        MimoWidget.refresh(getContext(), title, artist, false, null, false); // app closed: the widget's buttons open it
         releaseEq();
         main.removeCallbacks(fade);
         if (serviceRunning) getContext().stopService(new Intent(getContext(), MimoPlaybackService.class));

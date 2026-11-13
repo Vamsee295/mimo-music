@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- home-screen widget card: Mimo ink, rounded -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#F2191614" />
+    <corners android:radius="22dp" />
+</shape>

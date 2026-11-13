@@ -66,10 +66,11 @@ export type MediaInfo = {
   duration: number; // seconds
   position: number; // seconds
   playing: boolean;
+  liked?: boolean; // ♥ filled in the notification / lock screen
 };
 // play/pause/next/prev/seek: notification, lock screen, headset · time/ended/error: the native audio engine
 export type MediaAction = {
-  type: "play" | "pause" | "next" | "prev" | "seek" | "time" | "ended" | "error";
+  type: "play" | "pause" | "next" | "prev" | "seek" | "time" | "ended" | "error" | "like"; // like: ♥ in the notification
   position?: number;
   duration?: number;
   key?: string; // "time": which stream it's about
@@ -100,6 +101,7 @@ type MimoMediaPlugin = {
   setRepeatOne(o: { on: boolean }): Promise<void>;
   setSleep(o: { at: number }): Promise<void>;
   setFade(o: { seconds: number }): Promise<void>;
+  setLevel(o: { on: boolean }): Promise<{ supported: boolean }>;
   eqInfo(): Promise<EqState>;
   storage(): Promise<{ cache: number; downloads: number }>;
   clearCache(): Promise<void>;
@@ -152,6 +154,8 @@ export const engine = {
   setSleep: (at: number | null) => isNative() && quiet(MimoMedia.setSleep({ at: at ?? 0 })),
   /** crossfade between native songs: 0 = off, up to 12 seconds */
   setFade: (seconds: number) => isNative() && quiet(MimoMedia.setFade({ seconds })),
+  /** loudness levelling for native songs (Android 9+) */
+  setLevel: (on: boolean) => isNative() && quiet(MimoMedia.setLevel({ on }).then(() => {})),
   eqInfo: () => (isNative() ? MimoMedia.eqInfo() : Promise.resolve(null)),
   setEq: (o: { enabled?: boolean; preset?: number; levels?: number[] }) => (isNative() ? MimoMedia.setEq(o) : Promise.resolve(null)),
   setPlaying: (playing: boolean) => isNative() && quiet(MimoMedia.setPlaying({ playing })),
@@ -205,3 +209,24 @@ export async function setStatusBarHidden(hidden: boolean) {
 /** Android: bytes used by the streaming cache and by songs kept inside the app (downloads + Your Music copies). */
 export const storageUse = () => (isNative() ? MimoMedia.storage().catch(() => null) : Promise.resolve(null));
 export const clearAudioCache = () => (isNative() ? MimoMedia.clearCache().catch(() => {}) : Promise.resolve());
+
+/** Share a PNG (data: URL): the Android share sheet in the app; the browser's share or a download on the web. */
+export async function shareImage(name: string, dataUrl: string, title: string) {
+  if (isNative()) {
+    const { Filesystem, Directory } = await import("@capacitor/filesystem");
+    const { Share } = await import("@capacitor/share");
+    const { uri } = await Filesystem.writeFile({ path: name, data: dataUrl.split(",")[1] ?? "", directory: Directory.Cache });
+    await Share.share({ title, files: [uri], dialogTitle: title });
+    return;
+  }
+  const blob = await (await fetch(dataUrl)).blob();
+  const file = new File([blob], name, { type: "image/png" });
+  if (navigator.canShare?.({ files: [file] })) {
+    await navigator.share({ files: [file], title }).catch(() => {});
+    return;
+  }
+  const a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = name;
+  a.click();
+}

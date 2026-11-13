@@ -44,17 +44,17 @@ export function StackHero({ albums, songs }: { albums: Album[]; songs: Track[] }
   return (
     <section className="mb-12 grid items-center gap-10 lg:grid-cols-[1.15fr_1fr]">
       <div>
-        {/* greeting and the profile button share one line (phones; the sidebar has Account on desktop) */}
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <p className="note -rotate-1">hi — here&apos;s what {place} is playing ↓</p>
-          <ProfileLink />
+                <p className="note mb-3 -rotate-1">hi — here&apos;s what {place} is playing ↓</p>
+        {/* phones: the profile button sits on the headline's row, lined up with its first line */}
+        <div className="flex items-start justify-between gap-3">
+          <h1 className="display text-[54px] sm:text-[72px] xl:text-[92px]">
+            Music that <br />
+            <span className="hl my-1">moves</span>
+            <br />
+            you.
+          </h1>
+          <ProfileLink className="mt-2" />
         </div>
-        <h1 className="display text-[54px] sm:text-[72px] xl:text-[92px]">
-          Music that <br />
-          <span className="hl my-1">moves</span>
-          <br />
-          you.
-        </h1>
         <p className="mt-5 max-w-md text-[17px] leading-relaxed text-ink/70">
           Every chart, every album, every artist. Free, no ads, made for your phone.
         </p>

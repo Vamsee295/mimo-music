@@ -5,6 +5,7 @@ import { useState } from "react";
 import { getArtist } from "@/lib/api";
 import { useLibrary } from "@/lib/library";
 import { usePlayer, type Track } from "@/lib/store";
+import { dayOf, replay } from "@/lib/replay";
 import { Icon } from "./Icon";
 import { toast } from "./Swipe";
 import { Mosaic, Section, Shelf } from "./ui";
@@ -18,6 +19,8 @@ export function MadeForYou() {
   const history = useLibrary((s) => s.history);
   const liked = useLibrary((s) => s.liked);
   const songs = useLibrary((s) => s.songs);
+  const playLog = useLibrary((s) => s.playLog);
+  const playMeta = useLibrary((s) => s.playMeta);
   const [busy, setBusy] = useState("");
 
   const known = [...history, ...liked, ...songs];
@@ -43,6 +46,20 @@ export function MadeForYou() {
       },
     };
   });
+  // From your real plays (30s+): On Repeat = most played in the last 30 days; Rediscover = songs you played
+  // a lot before but not in the last 30 days (Spotify's "On Repeat" and "Repeat Rewind")
+  const today = dayOf();
+  const recent = replay(playLog, playMeta, today - 29).songs;
+  const recentIds = new Set(recent.map((s) => s.track.id));
+  const older = replay(playLog.filter(([, day]) => day < today - 29), playMeta, 0).songs.filter((s) => s.n >= 2 && !recentIds.has(s.track.id));
+  if (recent.length >= 3) {
+    const tracks = recent.slice(0, 30).map((s) => s.track);
+    mixes.unshift({ key: "on-repeat", title: "On Repeat", sub: "Your most played this month", arts: tracks.map((t) => t.art), load: async () => tracks });
+  }
+  if (older.length >= 3) {
+    const tracks = older.slice(0, 30).map((s) => s.track);
+    mixes.push({ key: "rediscover", title: "Rediscover", sub: "Old favourites you haven't played lately", arts: tracks.map((t) => t.art), load: async () => tracks });
+  }
   if (liked.length >= 5) {
     mixes.push({ key: "liked", title: "Liked Mix", sub: `${liked.length} songs you love`, arts: liked.map((t) => t.art), load: async () => liked });
   }

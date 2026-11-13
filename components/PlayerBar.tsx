@@ -11,10 +11,12 @@ import { Icon, type IconName } from "./Icon";
 import { fmt } from "./TrackRow";
 import { Swipe, toast } from "./Swipe";
 import { btnPrimary, btnSecondary } from "./ui";
+import { hasIndic, romanize } from "@/lib/romanize";
 import { getBio, getLyrics } from "@/lib/extras";
 import { useData } from "@/lib/useData";
 import { BACK_EVENT, engine, nativeLocalCopy, nativeMedia, offlineStream, setStatusBarHidden, type Stream } from "@/lib/native";
 import { isBackground, useForeground } from "@/lib/appState";
+import { rankPicks } from "@/lib/taste";
 import { director, radioAfter } from "@/lib/radio";
 import { useArtColor } from "@/lib/artColor";
 
@@ -60,7 +62,8 @@ function lineUp(seed: Track) {
       const noRepeat = lib.settings.noRepeatAutoplay;
       const played = new Set([...st.queue, ...lib.history.slice(0, noRepeat ? 100 : 50)].map((t) => t.id));
       if (noRepeat) suggested.forEach((id) => played.add(id));
-      const more = await radioAfter(seed, played).catch(() => [] as Track[]);
+      // ordered by what you listen to and skip (lib/taste.ts): skipped-twice songs out, liked artists first
+      const more = rankPicks(await radioAfter(seed, played).catch(() => [] as Track[]), useLibrary.getState().taste ?? { songs: {}, artists: {} });
       const now = usePlayer.getState();
       if (now.queue[now.index]?.id !== seed.id) return;
       if (more.length) {
@@ -140,6 +143,8 @@ export function PlayerBar() {
   const loaded = useRef({ key: "", at: 0 });
   const resumeAt = useRef({ key: "", t: 0 });
   const reopened = useRef(false); // the first song after opening the app has been loaded
+  // seconds of this play actually heard (play counting, Replay minutes, and what Autoplay learns)
+  const heardRef = useRef<{ key: string; sec: number; logged: boolean; extra: number; track?: Track }>({ key: "", sec: 0, logged: false, extra: 0 });
   const mode: Mode = !cur ? "audio" : src?.key === curKey ? (src.yt ? "yt" : "audio") : "finding";
   // the stream the native engine is playing for the current song (Android), and its clock (from "time" events)
   const stream = src?.key === curKey ? src.stream : undefined;
@@ -161,7 +166,7 @@ export function PlayerBar() {
             events: {
               onReady: () => {
                 yt.current = p;
-                p.setVolume(usePlayer.getState().volume * 100);
+                p.setVolume(Math.round(usePlayer.getState().volume * 100));
                 resolve(p);
               },
               onStateChange: (e) => {
@@ -359,6 +364,9 @@ export function PlayerBar() {
     const flush = () => {
       if (pending >= 1) useLibrary.getState().addListening(Math.round(pending), artist);
       pending = 0;
+      const h = heardRef.current; // listening after the play counted goes onto that play (Replay minutes)
+      if (h.logged && h.extra >= 1 && h.key === curKey) useLibrary.getState().addPlaySeconds(cur.id, h.extra);
+      h.extra = 0;
     };
     // Add real elapsed time, not "1 per tick": browsers slow timers to ~1/min in background tabs,
     // so counting ticks lost most listening. Gaps over 2 min (sleep/suspend) aren't trusted.
@@ -367,7 +375,20 @@ export function PlayerBar() {
       const gap = (now - last) / 1000;
       last = now;
       const sounding = mode === "yt" ? yt.current?.getPlayerState?.() === 1 : !!streamKey.current || (!!audio.current && !audio.current.paused);
-      if (sounding && gap < 120) pending += gap;
+      if (sounding && gap < 120) {
+        pending += gap;
+        // Recently Played, Replay and top artists: a play counts once the song has really played for 30s (or half
+        // of a shorter song), like Spotify — not skips, not songs that failed to load. Once per play (turn).
+        const heard = heardRef.current;
+        if (heard.key !== curKey) heardRef.current = { key: curKey, sec: 0, logged: false, extra: 0, track: cur };
+        const h = heardRef.current;
+        h.sec += gap;
+        if (h.logged) h.extra += gap;
+        else if (h.sec >= Math.max(10, Math.min(30, (cur.duration || 60) / 2))) {
+          h.logged = true;
+          useLibrary.getState().logPlay(cur, h.sec); // the seconds heard so far; the rest is added as it plays
+        }
+      }
       if (pending >= (isBackground() ? 60 : 10)) flush(); // screen off: save less often, leave the CPU to the audio
     }, 1000);
     window.addEventListener("pagehide", flush);
@@ -376,7 +397,18 @@ export function PlayerBar() {
       window.removeEventListener("pagehide", flush);
       flush();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.playing, cur, mode]);
+
+  // Smarter Autoplay learns from how the last song ended: moved on within 15s = a skip, 30s+ = a listen.
+  // (Songs that never made a sound, e.g. failed to load, teach nothing.)
+  useEffect(() => {
+    const h = heardRef.current;
+    if (!h.key || h.key === curKey || !h.track) return;
+    if (h.logged) useLibrary.getState().learnTaste(h.track, "done");
+    else if (h.sec >= 1 && h.sec < 15) useLibrary.getState().learnTaste(h.track, "skip");
+    heardRef.current = { key: "", sec: 0, logged: false, extra: 0 };
+  }, [curKey]);
 
   // Autoplay: when the last song in the queue starts, line up similar songs so the music doesn't stop
   // (like Spotify's Autoplay). Done once per song; skipped for Your Music files and when turned off.
@@ -446,17 +478,35 @@ export function PlayerBar() {
   useEffect(() => {
     engine.setFade(crossfade);
   }, [crossfade]);
-
-
-  // Recently Played + Account stats
+  // Crossfade for YouTube songs: the last N seconds fade out and the first N fade in, on the one player.
+  // ponytail: a fade, not an overlap — overlapping needs a second hidden player (two videos streaming at once,
+  // double data / battery, and the screen-off glitch risk), so it was left out on purpose.
   useEffect(() => {
-    if (cur && s.playing) useLibrary.getState().logPlay(cur);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cur?.id, s.turn]);
+    if (mode !== "yt" || !crossfade || !s.playing) return;
+    const id = setInterval(() => {
+      const p = yt.current;
+      if (!p?.getCurrentTime) return;
+      const t = p.getCurrentTime() || 0;
+      const d = p.getDuration() || 0;
+      let k = Math.min(1, t / crossfade);
+      if (d > crossfade * 3) k = Math.min(k, (d - t) / crossfade);
+      p.setVolume(Math.round(usePlayer.getState().volume * 100 * Math.max(0, Math.min(1, k)))); // YouTube wants whole numbers
+    }, 200);
+    return () => {
+      clearInterval(id);
+      yt.current?.setVolume(Math.round(usePlayer.getState().volume * 100));
+    };
+  }, [mode, crossfade, s.playing, curKey]);
+
+  const loudness = useLibrary((st) => st.settings.loudness);
+  useEffect(() => {
+    engine.setLevel(loudness);
+  }, [loudness]);
+
 
   useEffect(() => {
     if (audio.current) audio.current.volume = s.volume;
-    yt.current?.setVolume(s.volume * 100);
+    yt.current?.setVolume(Math.round(s.volume * 100));
     engine.setVolume(s.volume);
   }, [s.volume]);
 
@@ -544,6 +594,7 @@ export function PlayerBar() {
       duration: dur || cur.duration,
       position: at ?? position(),
       playing: s.playing,
+      liked: useLibrary.getState().liked.some((t) => t.id === cur.id),
     });
   };
   const pushRef = useRef(pushMedia);
@@ -553,7 +604,8 @@ export function PlayerBar() {
     actions.current = { seek, prev, onEnded, onError };
   });
   const durSec = Math.round(dur);
-  useEffect(() => pushRef.current(), [cur?.id, s.playing, durSec, mode]);
+  const curLiked = useLibrary((st) => !!cur && st.liked.some((t) => t.id === cur.id));
+  useEffect(() => pushRef.current(), [cur?.id, s.playing, durSec, mode, curLiked]);
   // renew every 5 min while playing: keeps the native CPU/Wi-Fi locks (15-min safety timeout) alive through
   // very long tracks and corrects any drift in the lock-screen seek bar
   useEffect(() => {
@@ -580,6 +632,9 @@ export function PlayerBar() {
         nativeTime.current = a.position;
         setTime(a.position);
         if (a.duration) setDur(a.duration);
+      } else if (a.type === "like") {
+        const t = st.queue[st.index];
+        if (t) useLibrary.getState().toggleLike(t); // ♥ from the notification / lock screen
       } else if (a.type === "ended") actions.current.onEnded();
       else if (a.type === "error") actions.current.onError();
     });
@@ -741,7 +796,9 @@ export function PlayerBar() {
       {/* Phone: mini player above the tab bar */}
       {cur && (
         <div className="mini-player fixed inset-x-2 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] brut z-30 [view-transition-name:mini] overflow-hidden rounded-2xl bg-card md:hidden">
-          <div className="flex items-center gap-3 p-2">
+          {/* swipe left for the next song, right for the previous one (Spotify / Apple Music) */}
+          <Swipe dir="left" label="Next" icon="next" tone="accent" onSwipe={() => s.next()} alt={{ label: "Previous", icon: "prev", tone: "accent", onSwipe: prev }}>
+          <div className="flex items-center gap-3 bg-card p-2">
             <button onClick={() => setPanel("full")} aria-label="Open Now Playing" className="flex min-w-0 flex-1 items-center gap-3 text-left">
               <img src={cur.art} alt="" className="size-11 rounded-lg border-2 border-[var(--line)]" />
               <span className="min-w-0">
@@ -756,6 +813,7 @@ export function PlayerBar() {
               <Icon name="next" className="size-7" />
             </button>
           </div>
+          </Swipe>
           <div className="h-1 bg-ink/10">
             <div className="h-full bg-[var(--accent)]" style={{ width: `${(time / (dur || 1)) * 100}%` }} />
           </div>
@@ -902,6 +960,15 @@ function QueueList() {
     setDrag(d);
   };
   const upcoming = s.queue.map((t, i) => ({ t, i })).slice(s.index + 1);
+  // queue history: the last songs played (they stay in the queue before the current one), oldest first
+  const showHistory = useLibrary((st) => st.settings.queueHistory);
+  const played = showHistory ? s.queue.map((t, i) => ({ t, i })).slice(Math.max(0, s.index - 25), Math.max(0, s.index)) : [];
+  const cur = s.queue[s.index];
+  const nowRow = useRef<HTMLLIElement>(null);
+  // open on "Now playing", with the history above it (scroll up to see it)
+  useEffect(() => {
+    nowRow.current?.scrollIntoView({ block: "start" });
+  }, [s.index]);
   const first = s.index + 1;
   const last = s.queue.length - 1;
   const target = drag ? Math.min(last, Math.max(first, drag.from + Math.round(drag.dy / drag.h))) : -1;
@@ -923,9 +990,34 @@ function QueueList() {
           </button>
         )}
       </div>
-      {!upcoming.length && <p className="py-8 text-center text-sm text-ink/40">Nothing up next. Use “Play Next” on any song.</p>}
       {upcoming.length > 0 && <p className="mb-1 text-xs text-ink/45">Swipe right: play next · swipe left: remove · drag ⠿ to reorder</p>}
       <ol className="-mx-2 flex-1 overflow-y-auto">
+        {played.length > 0 && <li className="label-cond px-3 pb-1 pt-1 text-[12px] text-ink/40">Played</li>}
+        {played.map(({ t, i }) => (
+          <li key={`h${i}:${t.id}`}>
+            <button onClick={() => s.jumpTo(i)} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left opacity-55 hover:bg-ink/5 hover:opacity-100">
+              <img src={t.art.replace("600x600", "100x100")} alt="" draggable={false} className="size-10 rounded-lg border-2 border-[var(--line)]" />
+              <span className="min-w-0">
+                <span className="block truncate text-sm">{t.title}</span>
+                <span className="block truncate text-xs text-ink/50">{t.artist}</span>
+              </span>
+            </button>
+          </li>
+        ))}
+        {cur && (played.length > 0 || upcoming.length > 0) && (
+          <li ref={nowRow} className="px-3 pb-1 pt-2">
+            <span className="label-cond block pb-1 text-[12px] text-accent">Now playing</span>
+            <span className="flex items-center gap-3">
+              <img src={cur.art.replace("600x600", "100x100")} alt="" className="size-10 rounded-lg border-2 border-[var(--accent)]" />
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-semibold">{cur.title}</span>
+                <span className="block truncate text-xs text-ink/50">{cur.artist}</span>
+              </span>
+            </span>
+            {upcoming.length > 0 && <span className="label-cond mt-3 block text-[12px] text-ink/40">Up next</span>}
+          </li>
+        )}
+        {!upcoming.length && <li className="py-8 text-center text-sm text-ink/40">Nothing up next. Use “Play Next” on any song.</li>}
         {upcoming.map(({ t, i }) => {
           const dragging = drag?.from === i;
           return (
@@ -1322,9 +1414,6 @@ function SongMenu({ cur, onClose, closePlayer, showArtist }: { cur: Track; onClo
   );
 }
 
-// per-song lyric timing nudges (YouTube versions often add an intro), kept for the session
-const lyricOffsets = new Map<string, number>();
-
 /** Apple Music–style lyrics: the current line is bright and fills in word-by-word as it's sung,
  *  the rest are dimmed and softly blurred, and the whole sheet glides so the current line sits
  *  near the top. Breaks show breathing dots. Previews can't sync (random 30s slice) → static. */
@@ -1332,13 +1421,14 @@ function LyricsPanel({ cur, sk, synced }: { cur: Track; sk: Seek; synced: boolea
   const { data, error, loading } = useData(`lyrics:${cur.id}`, () => getLyrics(cur));
   const box = useRef<HTMLDivElement>(null);
   const sheet = useRef<HTMLDivElement>(null);
-  const [offset, setOffset] = useState(() => lyricOffsets.get(cur.id) ?? 0);
   const playing = usePlayer((s) => s.playing);
   const lines = data?.synced;
-  const t = useSmoothTime(sk.time, playing) + offset;
+  const t = useSmoothTime(sk.time, playing);
   const opts = useLibrary((st) => st.settings);
   const live = synced && opts.syncedLyrics && !!lines;
   const blurOthers = opts.blurLyrics && !opts.reduceBlur;
+  // Telugu / Tamil / Hindi… lyrics are always shown in English letters
+  const show = (text: string) => (hasIndic(text) ? romanize(text) : text);
   const active = live ? lines.findLastIndex((l) => l.t <= t + 0.15) : -1;
   // progress through the current line, 0..1 → drives the left-to-right fill
   const next = live && active >= 0 ? (lines[active + 1]?.t ?? lines[active].t + 5) : 0;
@@ -1395,12 +1485,6 @@ function LyricsPanel({ cur, sk, synced }: { cur: Track; sk: Seek; synced: boolea
     return () => ro.disconnect();
   }, [active, live, data]);
 
-  const nudge = (d: number) => {
-    const v = Math.round((offset + d) * 10) / 10;
-    lyricOffsets.set(cur.id, v);
-    setOffset(v);
-  };
-
   if (loading) return <p className="note">finding the words…</p>;
   if (error) return <p className="note">couldn&apos;t reach the lyrics service.</p>;
   if (!data) return <p className="note">no lyrics found for this one.</p>;
@@ -1412,11 +1496,11 @@ function LyricsPanel({ cur, sk, synced }: { cur: Track; sk: Seek; synced: boolea
         {lines ? (
           lines.map((l, i) => (
             <p key={i} className="py-1.5 text-[24px] font-extrabold leading-snug tracking-tight text-ink/80 md:text-[28px]">
-              {l.text || "♪"}
+              {show(l.text) || "♪"}
             </p>
           ))
         ) : (
-          <p className="whitespace-pre-line text-[19px] font-medium leading-relaxed text-ink/85">{data.plain}</p>
+          <p className="whitespace-pre-line text-[19px] font-medium leading-relaxed text-ink/85">{show(data.plain ?? "")}</p>
         )}
         {lines && opts.syncedLyrics && <p className="note mt-3 text-[17px]">lyrics move with the music on full songs</p>}
       </div>
@@ -1442,7 +1526,7 @@ function LyricsPanel({ cur, sk, synced }: { cur: Track; sk: Seek; synced: boolea
               <button
                 key={i}
                 data-i={i}
-                onClick={() => sk.seek(Math.max(0, l.t - offset))}
+                onClick={() => sk.seek(Math.max(0, l.t))}
                 style={style}
                 className="block w-full origin-left py-2.5 text-left transition-[opacity,filter,transform] duration-[600ms] ease-[cubic-bezier(0.25,1,0.5,1)] hover:!opacity-90 hover:![filter:none]"
               >
@@ -1461,7 +1545,7 @@ function LyricsPanel({ cur, sk, synced }: { cur: Track; sk: Seek; synced: boolea
                         : undefined
                     }
                   >
-                    {l.text}
+                    {show(l.text)}
                   </span>
                 ) : (
                   // musical break: three breathing dots (Apple's "…" between verses)
@@ -1478,17 +1562,6 @@ function LyricsPanel({ cur, sk, synced }: { cur: Track; sk: Seek; synced: boolea
         </div>
       </div>
 
-      {/* timing nudge: YouTube versions sometimes run early/late against the lyric file */}
-      <div className="mt-2 flex items-center gap-2 text-ink/60">
-        <span className="label-cond text-[13px]">Lyrics timing</span>
-        <button onClick={() => nudge(0.5)} title="Lyrics show 0.5s sooner" className="label-cond rounded-full border-2 border-[var(--line)] px-2.5 text-[13px] hover:text-ink">
-          ◀ earlier
-        </button>
-        <span className="w-12 text-center font-mono text-xs">{offset > 0 ? "+" : ""}{offset.toFixed(1)}s</span>
-        <button onClick={() => nudge(-0.5)} title="Lyrics show 0.5s later" className="label-cond rounded-full border-2 border-[var(--line)] px-2.5 text-[13px] hover:text-ink">
-          later ▶
-        </button>
-      </div>
     </>
   );
 }

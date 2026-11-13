@@ -4,4 +4,5 @@
     <string name="title_activity_main">Mimo</string>
     <string name="package_name">com.mimo.music</string>
     <string name="custom_url_scheme">com.mimo.music</string>
+    <string name="widget_description">Now playing, with play, pause and skip</string>
 </resources>

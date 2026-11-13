@@ -7,6 +7,7 @@ let libLoaded = false; // flips once saved data has been read; blocks writes bef
 import type { Track } from "./store";
 import type { Album } from "./api";
 import { dayOf, type PlayLog } from "./replay";
+import { learn, type Taste } from "./taste";
 
 /** Something you opened from Search, shown under the search box next time (newest first) */
 export type Recent =
@@ -44,6 +45,8 @@ export type Settings = {
   swipePlayNext: boolean; // swiping a song right: play it next (on) or add it to the end of your queue (off)
   noRepeatAutoplay: boolean; // Autoplay never suggests a song already played or suggested since the app opened
   hideStatusBar: boolean; // Android: hide the clock / battery bar while Now Playing is open
+  queueHistory: boolean; // Up Next also shows the last songs played (tap one to go back)
+  loudness: boolean; // even out volume between native songs (Android 9+)
   // which sections Home shows
   homeFeatured: boolean;
   homeMadeForYou: boolean;
@@ -76,13 +79,17 @@ type State = {
   /** Replay: every song started, oldest first ([track id, day]), and those songs' details. Last 4000 plays. */
   playLog: PlayLog;
   playMeta: Record<string, Track>;
+  /** Smarter Autoplay: skips vs listens per song and artist (lib/taste.ts) */
+  taste: Taste;
 };
 
 type Actions = {
   toggleLike: (t: Track) => void;
   toggleSong: (t: Track) => void;
   toggleAlbum: (a: Album) => void;
-  logPlay: (t: Track) => void;
+  logPlay: (t: Track, seconds?: number) => void;
+  addPlaySeconds: (id: string, seconds: number) => void;
+  learnTaste: (t: Track, how: "skip" | "done") => void;
   addListening: (seconds: number, artist: string) => void;
   createPlaylist: (name: string, first?: Track) => string;
   addToPlaylist: (id: string, t: Track) => void;
@@ -116,7 +123,8 @@ const initial: State = {
   downloads: [],
   playLog: [],
   playMeta: {},
-  settings: { theme: "editorial", country: "in", accent: "#c8603a", explicit: true, reduceMotion: false, autoplay: true, dataSaver: true, ytKey: "", crossfade: 0, themeSystem: false, reduceBlur: false, syncedLyrics: true, blurLyrics: true, swipePlayNext: false, noRepeatAutoplay: false, hideStatusBar: false, homeFeatured: true, homeMadeForYou: true, homeMoods: true, homeRecent: true, homeCharts: true, homeGenres: true, sidebarWidth: 240, sidebarCollapsed: false },
+  taste: { songs: {}, artists: {} },
+  settings: { theme: "editorial", country: "in", accent: "#c8603a", explicit: true, reduceMotion: false, autoplay: true, dataSaver: true, ytKey: "", crossfade: 0, themeSystem: false, reduceBlur: false, syncedLyrics: true, blurLyrics: true, swipePlayNext: false, noRepeatAutoplay: false, hideStatusBar: false, queueHistory: true, loudness: false, homeFeatured: true, homeMadeForYou: true, homeMoods: true, homeRecent: true, homeCharts: true, homeGenres: true, sidebarWidth: 240, sidebarCollapsed: false },
 };
 
 const logHistory = (s: State, t: Track) => ({
@@ -152,15 +160,28 @@ export const useLibrary = create<State & Actions>()(
           pinned: s.pinned.filter((k) => k !== `album:${a.id}`),
         })),
 
-      logPlay: (t) =>
+      logPlay: (t, seconds = 0) =>
         set((s) => {
-          const playLog: PlayLog = [...s.playLog, [t.id, dayOf()] as [string, number]].slice(-4000);
+          const playLog: PlayLog = [...s.playLog, [t.id, dayOf(), Math.round(seconds)] as [string, number, number]].slice(-4000);
           const kept = new Set(playLog.map(([id]) => id));
           const playMeta = Object.fromEntries(Object.entries({ ...s.playMeta, [t.id]: t }).filter(([id]) => kept.has(id)));
           return { playLog, playMeta, ...logHistory(s, t) };
         }),
 
-      clearHistory: () => set({ history: [], plays: {}, playLog: [], playMeta: {} }),
+      clearHistory: () => set({ history: [], plays: {}, playLog: [], playMeta: {}, taste: { songs: {}, artists: {} } }),
+
+      learnTaste: (t, how) => set((s) => ({ taste: learn(s.taste ?? { songs: {}, artists: {} }, t, how) })),
+
+      // keep adding listening time to the play it belongs to (the last entry for that song)
+      addPlaySeconds: (id, sec) =>
+        set((s) => {
+          const at = s.playLog.findLastIndex(([x]) => x === id);
+          if (at < 0 || sec <= 0) return {};
+          const playLog = [...s.playLog];
+          const [x, day, old = 0] = playLog[at];
+          playLog[at] = [x, day, old + Math.round(sec)];
+          return { playLog };
+        }),
 
       createPlaylist: (name, first) => {
         const id = crypto.randomUUID();
@@ -205,7 +226,7 @@ export const useLibrary = create<State & Actions>()(
         libLoaded = true; // saved data is in memory now → writes are safe
       },
       // older saves lack new settings keys → fill them from defaults
-      version: 5,
+      version: 6,
       // v2 = editorial redesign: old Apple pink default → rust.
       migrate: (saved, v) => {
         const s = saved as Partial<State>;
@@ -213,6 +234,7 @@ export const useLibrary = create<State & Actions>()(
         // (v3 used to reset black → rust; black is supported again via readableAccent, so it's left as chosen)
         if (v < 4) s.songs = [...(s.liked ?? [])]; // v4: Library songs start with everything already loved
         if (v < 5) s.songs = [...(s.songs ?? [])].reverse(); // v5: songs listed in the order you added them (was newest first)
+        if (v < 6 && s.settings?.crossfade) s.settings.crossfade = Math.min(8, Math.max(5, s.settings.crossfade)); // v6: 5–8 s only
         return s as State & Actions;
       },
       merge: (saved, cur) => {

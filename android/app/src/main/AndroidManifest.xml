@@ -34,6 +34,18 @@
             android:name=".MimoActionReceiver"
             android:exported="false" />
 
+        <!-- Home-screen widget: now playing with ⏮ ⏯ ⏭ (MimoWidget) -->
+        <receiver
+            android:name=".MimoWidget"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/mimo_widget_info" />
+        </receiver>
+
         <!-- Android Auto / media browsers: connect to Mimo's media session (MimoBrowserService) -->
         <service
             android:name=".MimoBrowserService"
