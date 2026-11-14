@@ -10,6 +10,7 @@ export type Album = {
   artistId: string;
   art: string;
   year: string;
+  released?: string; // full release date (ISO)
   genre: string;
   count: number;
   explicit: boolean;
@@ -132,6 +133,7 @@ const toTrack = (r: Raw): Track => ({
   n: r.trackNumber,
   genre: r.primaryGenreName,
   year: r.releaseDate?.slice(0, 4),
+  released: r.releaseDate,
 });
 
 const toAlbum = (r: Raw): Album => ({
@@ -141,6 +143,7 @@ const toAlbum = (r: Raw): Album => ({
   artistId: String(r.artistId ?? ""),
   art: art(r.artworkUrl100),
   year: r.releaseDate?.slice(0, 4) ?? "",
+  released: r.releaseDate,
   genre: r.primaryGenreName ?? "",
   count: r.trackCount ?? 0,
   explicit: r.collectionExplicitness === "explicit",
@@ -197,6 +200,18 @@ export async function getArtist(id: string) {
   };
 }
 
+/** An artist's newest songs (Apple's "recent" order also mixes in a few old ones: lib/forYou.ts filters by date). */
+export async function recentSongs(artistId: string, limit = 25) {
+  const { results } = await get<{ results: Raw[] }>(`${IT}/lookup?id=${artistId}&entity=song&limit=${limit}&sort=recent&country=${settings().country}`);
+  return songs(results);
+}
+
+/** An artist's newest albums and singles. */
+export async function recentAlbums(artistId: string, limit = 15) {
+  const { results } = await get<{ results: Raw[] }>(`${IT}/lookup?id=${artistId}&entity=album&limit=${limit}&sort=recent&country=${settings().country}`);
+  return albums(results);
+}
+
 const feed = (kind: "topsongs" | "topalbums", limit: number, genre?: number) =>
   `${IT}/${settings().country}/rss/${kind}/limit=${limit}${genre ? `/genre=${genre}` : ""}/json`;
 
@@ -218,6 +233,7 @@ export async function topAlbums(genre?: number, limit = 25): Promise<Album[]> {
     artistId: e["im:artist"].attributes?.href?.match(/\/(\d+)\?/)?.[1] ?? "",
     art: art(e["im:image"].at(-1)?.label),
     year: e["im:releaseDate"]?.label.slice(0, 4) ?? "",
+    released: e["im:releaseDate"]?.label,
     genre: e.category?.attributes?.label ?? "",
     count: Number(e["im:itemCount"]?.label ?? 0),
     explicit: false, // feed doesn't say; album page filters tracks

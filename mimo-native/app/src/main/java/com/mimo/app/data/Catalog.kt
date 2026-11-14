@@ -55,12 +55,12 @@ internal data class Raw(
         id = trackId.toString(), title = trackName ?: "", artist = artistName ?: "", artistId = artistId?.toString() ?: "",
         album = collectionName ?: "", albumId = collectionId?.toString() ?: "", art = art(artworkUrl100), src = previewUrl ?: "",
         duration = (trackTimeMillis ?: 30_000) / 1000.0, explicit = trackExplicitness == "explicit",
-        n = trackNumber, genre = primaryGenreName, year = releaseDate?.take(4),
+        n = trackNumber, genre = primaryGenreName, year = releaseDate?.take(4), released = releaseDate,
     )
     fun toAlbum() = Album(
         id = collectionId.toString(), title = collectionName ?: "", artist = artistName ?: "", artistId = artistId?.toString() ?: "",
         art = art(artworkUrl100), year = releaseDate?.take(4) ?: "", genre = primaryGenreName ?: "", count = trackCount ?: 0,
-        explicit = collectionExplicitness == "explicit", copyright = copyright ?: "",
+        explicit = collectionExplicitness == "explicit", copyright = copyright ?: "", released = releaseDate,
     )
 }
 
@@ -111,6 +111,14 @@ class Catalog(private val country: () -> String, private val explicit: () -> Boo
         ArtistPage(Artist(id, head.artistName ?: "", head.primaryGenreName ?: ""), songs(s.await()), albums(a.await()).sortedByDescending { it.year })
     }
 
+    /** An artist's newest songs (Apple's "recent" order also mixes in a few old ones: ForYou.kt filters by date). */
+    suspend fun recentSongs(artistId: String, limit: Int = 25) =
+        songs(results("$IT/lookup?id=$artistId&entity=song&limit=$limit&sort=recent&country=${country()}"))
+
+    /** An artist's newest albums and singles. */
+    suspend fun recentAlbums(artistId: String, limit: Int = 15) =
+        albums(results("$IT/lookup?id=$artistId&entity=album&limit=$limit&sort=recent&country=${country()}"))
+
     private fun feed(kind: String, limit: Int, genre: Int?) =
         "$IT/${country()}/rss/$kind/limit=$limit${if (genre != null) "/genre=$genre" else ""}/json"
 
@@ -143,6 +151,7 @@ class Catalog(private val country: () -> String, private val explicit: () -> Boo
                 genre = e["category"].attr("label") ?: "",
                 count = e["im:itemCount"].label()?.toIntOrNull() ?: 0,
                 copyright = e["rights"].label() ?: "",
+                released = e["im:releaseDate"].label(),
             )
         }
 

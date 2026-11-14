@@ -41,6 +41,10 @@ import com.mimo.app.data.*
 import com.mimo.app.playback.SleepTimer
 import com.mimo.app.ui.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 
 // Mini player and full-screen Now Playing (components/PlayerBar.tsx).
 
@@ -111,30 +115,39 @@ fun NowPlaying(onClose: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     var dragging by remember { mutableStateOf<Float?>(null) }
     val pos = rememberPosition()
+    // "Hukum (From "Jailer")" → title "Hukum", and "Jailer" goes in the line above; "… - Single" albums lose the suffix
+    val title = cleanTitle(t.title)
+    val from = Regex("""\(from\s+["“]?([^"”)]+)["”]?\)""", RegexOption.IGNORE_CASE).find(t.title)?.groupValues?.get(1) ?: cleanTitle(t.album)
+    val hasKey = looksLikeKey(cleanKey(lib.ytKey))
+    val pull = rememberPullToClose(enabled = view == View.ART && !menu, onClose = onClose)
 
     Column(
-        Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(base, lerp(base, Color.Black, 0.6f))))
+        Modifier.fillMaxSize()
+            .then(pull.modifier)
+            .background(Brush.verticalGradient(listOf(base, lerp(base, Color.Black, 0.6f))))
             .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) {} // swallow taps: nothing behind Now Playing reacts
-            .systemBarsPadding().padding(horizontal = 22.dp),
+            .systemBarsPadding().padding(horizontal = 20.dp),
     ) {
-        Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconBtn("down", "Close", onClose, tint = white, size = 30.dp)
-            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("NOW PLAYING", style = MimoType.eyebrow, color = white.copy(alpha = 0.6f))
-                Text(t.album, style = MimoType.body.copy(fontSize = 12.sp), color = white.copy(alpha = 0.8f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            Box {
-                IconBtn("more", "More", { menu = true }, tint = white)
-                TrackMenu(t, menu, { menu = false })
-            }
+        // grabber: press and pull the sheet down to close (it's only a handle, tapping does nothing; Back still closes)
+        Box(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 6.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.width(40.dp).height(5.dp).clip(RoundedCornerShape(999.dp)).background(white.copy(alpha = 0.4f)))
+        }
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("PLAYING FROM", style = MimoType.eyebrow.copy(fontSize = 10.sp), color = white.copy(alpha = 0.45f))
+            Text(from, style = MimoType.body.copy(fontSize = 13.sp, fontWeight = FontWeight.Medium), color = white.copy(alpha = 0.8f), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.clickable(enabled = t.albumId.isNotEmpty()) { onClose(); nav.go(Screen.AlbumPage(t.albumId)) })
         }
 
         Box(Modifier.weight(1f).fillMaxWidth().padding(vertical = 14.dp), contentAlignment = Alignment.Center) {
             when (view) {
-                View.ART -> Cover(
-                    t.art, Modifier.fillMaxWidth().aspectRatio(1f).shadow(24.dp, RoundedCornerShape(16.dp)),
-                    px = 1000, radius = 16.dp,
-                )
+                View.ART -> {
+                    // the cover settles back a little while paused (Apple Music)
+                    val scale by androidx.compose.animation.core.animateFloatAsState(if (p.isPlaying || p.buffering) 1f else 0.9f, tween(500), label = "cover")
+                    Cover(
+                        t.art, Modifier.fillMaxWidth().aspectRatio(1f).graphicsLayer { scaleX = scale; scaleY = scale }.shadow(24.dp, RoundedCornerShape(16.dp)),
+                        px = 1000, radius = 16.dp,
+                    )
+                }
                 View.LYRICS -> LyricsView(t, pos, white)
                 View.QUEUE -> QueueView(white)
             }
@@ -142,28 +155,47 @@ fun NowPlaying(onClose: () -> Unit) {
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(t.title, style = MimoType.display.copy(fontSize = 26.sp, lineHeight = 28.sp), color = white, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                // Mimo's Anton headline: the one brand touch on this dark screen
+                Text(title.uppercase(), style = MimoType.display.copy(fontSize = 30.sp, lineHeight = 31.sp), color = white, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(t.artist, style = MimoType.body.copy(fontSize = 15.sp), color = white.copy(alpha = 0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.clickable(enabled = t.artistId.isNotEmpty()) { onClose(); nav.go(Screen.ArtistPage(t.artistId, t.artist)) })
             }
             val liked = lib.isLiked(t.id)
-            IconBtn(if (liked) "heart" else "heartOutline", "Love", { app.library.update { it.toggleLike(t) } }, tint = if (liked) Mimo.colors.accent else white, size = 26.dp)
+            IconBtn(if (liked) "heart" else "heartOutline", "Love", { app.library.update { it.toggleLike(t) } }, tint = if (liked) Mimo.colors.accent else white, size = 24.dp)
+            Box {
+                IconBtn("more", "More options", { menu = true }, tint = white)
+                TrackMenu(t, menu, { menu = false }, extras = { close -> SleepItems(close) })
+            }
         }
-        p.error?.let { Text(it, style = MimoType.body.copy(fontSize = 13.sp), color = Color(0xFFFF9C7A), modifier = Modifier.padding(top = 4.dp)) }
 
+        // no playable song (no key / not found / blocked): a dim, untouchable bar with no fake 0:00
+        val idle = p.error != null || !hasKey || p.durationMs <= 0
         val dur = p.durationMs.coerceAtLeast(1)
         Slider(
-            value = dragging ?: (pos.toFloat() / dur).coerceIn(0f, 1f),
+            value = if (idle) 0f else dragging ?: (pos.toFloat() / dur).coerceIn(0f, 1f),
             onValueChange = { dragging = it },
             onValueChangeFinished = { dragging?.let { p.seekTo((it * dur).toLong()) }; dragging = null },
-            colors = SliderDefaults.colors(thumbColor = white, activeTrackColor = white, inactiveTrackColor = white.copy(alpha = 0.25f)),
-            thumb = { Box(Modifier.size(14.dp).background(white, CircleShape)) },
-            modifier = Modifier.padding(top = 6.dp),
+            enabled = !idle,
+            colors = SliderDefaults.colors(
+                thumbColor = white, activeTrackColor = white, inactiveTrackColor = white.copy(alpha = 0.25f),
+                disabledThumbColor = Color.Transparent, disabledActiveTrackColor = white.copy(alpha = 0.2f), disabledInactiveTrackColor = white.copy(alpha = 0.12f),
+            ),
+            thumb = { if (!idle) Box(Modifier.size(14.dp).background(white, CircleShape)) },
+            modifier = Modifier.padding(top = 6.dp).graphicsLayer { alpha = if (idle) 0.5f else 1f },
         )
         Row {
-            Text(fmt(dragging?.let { (it * dur).toLong() } ?: pos), style = MimoType.eyebrow, color = white.copy(alpha = 0.6f))
+            Text(if (idle) "--:--" else fmt(dragging?.let { (it * dur).toLong() } ?: pos), style = MimoType.eyebrow, color = white.copy(alpha = if (idle) 0.3f else 0.6f))
             Spacer(Modifier.weight(1f))
-            Text("-" + fmt(dur - pos), style = MimoType.eyebrow, color = white.copy(alpha = 0.6f))
+            Text(if (idle) "--:--" else "-" + fmt(dur - pos), style = MimoType.eyebrow, color = white.copy(alpha = if (idle) 0.3f else 0.6f))
+        }
+        // one slim line instead of a box, so the controls don't jump down
+        if (!hasKey) Text(
+            "Add YouTube key to play full songs →", style = MimoType.body.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium), color = white.copy(alpha = 0.85f), maxLines = 1,
+            modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp).clip(RoundedCornerShape(999.dp)).background(white.copy(alpha = 0.1f))
+                .clickable { onClose(); nav.go(Screen.Settings) }.padding(horizontal = 12.dp, vertical = 5.dp),
+        ) else p.error?.let {
+            Text(it, style = MimoType.body.copy(fontSize = 12.sp), color = white.copy(alpha = 0.65f), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp))
         }
 
         Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -180,38 +212,87 @@ fun NowPlaying(onClose: () -> Unit) {
             }
         }
 
+        // bottom row: Lyrics · Up Next (the sleep timer lives in the ⋯ menu)
         Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             IconBtn("lyricsBubble", "Lyrics", { view = if (view == View.LYRICS) View.ART else View.LYRICS }, tint = if (view == View.LYRICS) Mimo.colors.accent else white.copy(alpha = 0.75f))
-            SleepButton(white)
             IconBtn("list", "Up next", { view = if (view == View.QUEUE) View.ART else View.QUEUE }, tint = if (view == View.QUEUE) Mimo.colors.accent else white.copy(alpha = 0.75f))
         }
     }
 }
 
+/**
+ * Press and pull Now Playing down to close it (Apple Music / BitChord): the sheet follows the finger, shrinking
+ * and rounding its corners to show the page and the mini player underneath. Let go past a quarter of the screen
+ * (or with a quick flick) and it becomes the mini player straight away; otherwise it springs back.
+ * Off while Lyrics / Up Next are open, so their lists scroll normally.
+ */
+private class PullToClose(val modifier: Modifier)
+
 @Composable
-private fun SleepButton(white: Color) {
+private fun rememberPullToClose(enabled: Boolean, onClose: () -> Unit): PullToClose {
+    val scope = rememberCoroutineScope()
+    val offset = remember { androidx.compose.animation.core.Animatable(0f) }
+    val height = androidx.compose.ui.platform.LocalWindowInfo.current.containerSize.height.toFloat().coerceAtLeast(1f)
+    val close by rememberUpdatedState(onClose)
+    val mod = Modifier
+        .graphicsLayer {
+            val dy = offset.value
+            val k = (dy / height).coerceIn(0f, 1f)
+            translationY = dy
+            scaleX = 1f - k * 0.12f
+            scaleY = 1f - k * 0.12f
+            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f)
+            shape = RoundedCornerShape(if (dy > 0f) (12f + dy / 6f).coerceAtMost(32f).dp else 0.dp)
+            clip = dy > 0f
+        }
+        .pointerInput(enabled) {
+            if (!enabled) return@pointerInput
+            val tracker = androidx.compose.ui.input.pointer.util.VelocityTracker()
+            detectVerticalDragGestures(
+                onDragStart = { tracker.resetTracking() },
+                onVerticalDrag = { change, amount ->
+                    tracker.addPosition(change.uptimeMillis, change.position)
+                    change.consume()
+                    // follows the finger 1:1, then gets heavier past half the screen
+                    val raw = (offset.value + amount).coerceAtLeast(0f)
+                    val next = if (raw < height / 2 || amount < 0) raw else offset.value + amount * 0.5f
+                    scope.launch { offset.snapTo(next) }
+                },
+                onDragEnd = {
+                    val speed = tracker.calculateVelocity().y // px per second
+                    if (offset.value > height * 0.25f || (speed > 1500f && offset.value > 60f)) {
+                        close() // straight to the mini player, no slide-away
+                        scope.launch { offset.snapTo(0f) }
+                    } else scope.launch { offset.animateTo(0f, tween(320, easing = androidx.compose.animation.core.CubicBezierEasing(0.32f, 0.72f, 0f, 1f))) }
+                },
+                onDragCancel = { scope.launch { offset.animateTo(0f, tween(320)) } },
+            )
+        }
+    return PullToClose(mod)
+}
+
+/** Sleep timer options inside the ⋯ menu, with the time left on the heading. */
+@Composable
+private fun SleepItems(close: () -> Unit) {
     val app = app()
     val toast = LocalToast.current
     val sleep by app.sleep.collectAsState()
-    var open by remember { mutableStateOf(false) }
-    val on = sleep.at != null || sleep.afterSong
     val c = Mimo.colors
-    Box {
-        Row(Modifier.clip(RoundedCornerShape(999.dp)).clickable { open = true }.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon("moon", tint = if (on) c.accent else white.copy(alpha = 0.75f), size = 20.dp)
-            val left = sleep.at?.let { ((it - System.currentTimeMillis()) / 60_000).coerceAtLeast(0) + 1 }
-            if (on) Text(if (sleep.afterSong) " END OF SONG" else " ${left} MIN", style = MimoType.label.copy(fontSize = 13.sp), color = c.accent)
-        }
-        DropdownMenu(open, { open = false }, containerColor = c.card) {
-            @Composable fun opt(label: String, s: SleepTimer, msg: String) = DropdownMenuItem(
-                text = { Text(label, style = MimoType.body, color = c.ink) },
-                onClick = { open = false; app.sleep.value = s; toast(msg) },
-            )
-            listOf(15, 30, 45, 60).forEach { m -> opt("$m minutes", SleepTimer(at = System.currentTimeMillis() + m * 60_000L), "Music stops in $m minutes") }
-            opt("End of this song", SleepTimer(afterSong = true), "Music stops after this song")
-            if (on) opt("Turn off", SleepTimer(), "Sleep timer off")
-        }
-    }
+    val on = sleep.at != null || sleep.afterSong
+    val left = sleep.at?.let { Math.round((it - System.currentTimeMillis()) / 60_000.0).coerceAtLeast(1) }
+    androidx.compose.material3.HorizontalDivider(color = c.line.copy(alpha = 0.3f))
+    Text(
+        "SLEEP TIMER" + when { sleep.afterSong -> " · END OF SONG"; left != null -> " · ${left}m LEFT"; else -> "" },
+        style = MimoType.eyebrow, color = c.accent, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+    )
+    @Composable fun opt(label: String, s: SleepTimer, msg: String) = DropdownMenuItem(
+        text = { Text(label, style = MimoType.body, color = c.ink) },
+        leadingIcon = { Icon("moon", tint = c.accent, size = 20.dp) },
+        onClick = { close(); app.sleep.value = s; toast(msg) },
+    )
+    listOf(15, 30, 45, 60).forEach { m -> opt(if (m == 60) "1 hour" else "$m minutes", SleepTimer(at = System.currentTimeMillis() + m * 60_000L), "Music stops in ${if (m == 60) "1 hour" else "$m minutes"}") }
+    opt("End of this song", SleepTimer(afterSong = true), "Music stops after this song")
+    if (on) opt("Turn off", SleepTimer(), "Sleep timer off")
 }
 
 @Composable

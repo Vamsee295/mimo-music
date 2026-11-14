@@ -2,7 +2,8 @@
 import { ProfileLink } from "@/components/ProfileLink";
 import Link from "next/link";
 import { ArtistAvatar } from "@/components/ArtistAvatar";
-import { FEATURED, getArtist, topAlbums, topSongs } from "@/lib/api";
+import { FEATURED, getArtist } from "@/lib/api";
+import { loadForYou } from "@/lib/forYou";
 import { replay } from "@/lib/replay";
 import { useLibrary } from "@/lib/library";
 import { useData } from "@/lib/useData";
@@ -13,8 +14,11 @@ import { MOODS, type MoodId } from "@/lib/moods";
 import { ErrorNote, GenreShelf, Section, Shelf, Skeleton, SongGrid } from "@/components/ui";
 
 export default function Home() {
-  const albums = useData("home-flow", () => topAlbums(undefined, 12));
-  const songs = useData("home-songs", () => topSongs(undefined, 24));
+  // For You: new + trending from the artists you listen to, rebuilt once a day (lib/forYou.ts)
+  const forYou = useData("for-you", () => loadForYou(useLibrary.getState()));
+  const albums = { data: forYou.data?.albums, error: forYou.error };
+  const songs = { data: forYou.data?.trending, error: forYou.error };
+  const fresh = forYou.data?.newForYou ?? [];
   const history = useLibrary((s) => s.history);
   const show = useLibrary((s) => s.settings); // Settings → Content: which sections Home shows
   const playLog = useLibrary((s) => s.playLog);
@@ -42,6 +46,12 @@ export default function Home() {
 
       {/* your listening first (Spotify / Apple Music): mixes, what you played, more from artists you love.
           Charts and genres follow. With no history yet these are empty and Home starts with the charts. */}
+      {fresh.length > 0 && (
+        <Section title="New for You" kicker="Fresh from your artists" note="released in the last 60 days ↓">
+          <SongGrid tracks={fresh} />
+        </Section>
+      )}
+
       {show.homeMadeForYou && <MadeForYou />}
 
       {show.homeRecent && history.length > 0 && (
@@ -99,7 +109,7 @@ export default function Home() {
       )}
 
       {show.homeCharts && (
-        <Section title="Top Songs" kicker="The chart" href="/genre?id=0">
+        <Section title="Trending for You" kicker="Picked daily" note="your artists' new songs and biggest hits">
           {songs.error ? <ErrorNote /> : songs.data ? <SongGrid tracks={songs.data} /> : <Skeleton rows={3} className="h-56 w-[30%]" />}
         </Section>
       )}

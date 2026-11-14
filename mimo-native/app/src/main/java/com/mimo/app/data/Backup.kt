@@ -9,7 +9,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
-import java.time.Instant
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 
 // Library backup: same file format as lib/backup.ts, so a library exported from the web/Capacitor app
 // imports here (and back). There's no account, so this file is the only way to move or rescue a library.
@@ -28,12 +30,12 @@ data class Restored(
 )
 
 /** Everything worth keeping. The YouTube key isn't part of Settings, so it can never end up in the file. */
-fun makeBackup(lib: LibraryState, now: Instant = Instant.now()): String = json.encodeToString(
+fun makeBackup(lib: LibraryState, now: Long = System.currentTimeMillis()): String = json.encodeToString(
     JsonObject.serializer(),
     buildJsonObject {
         put("app", "mimo")
         put("version", 1)
-        put("exported", now.toString())
+        put("exported", SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }.format(now))
         put("name", lib.name)
         put("liked", json.encodeToJsonElement(lib.liked))
         put("songs", json.encodeToJsonElement(lib.songs))

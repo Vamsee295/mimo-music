@@ -9,6 +9,7 @@ class App private constructor(context: Context) {
     val catalog = Catalog(country = { library.value.settings.country }, explicit = { library.value.settings.explicit })
     val youtube = YouTubeSearch(VideoCache(File(context.filesDir, "yt-ids.json"))) { library.value.ytKey }
     val extras = Extras()
+    val forYou = ForYouStore(File(context.filesDir, "for-you.json"), catalog, library)
     /** Sleep timer, shared by the screens (set it) and the playback service (acts on it). Same process, so no IPC. */
     val sleep = kotlinx.coroutines.flow.MutableStateFlow(com.mimo.app.playback.SleepTimer())
 

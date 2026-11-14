@@ -19,18 +19,10 @@ const POSE = [
 /** Portfolio-style hero: Anton headline + rust word-block on the left, a hand-tilted stack of
  *  this week's top albums on the right. Tap the stack to deal the next record to the front. */
 export function StackHero({ albums, songs }: { albums: Album[]; songs: Track[] }) {
-  const country = useLibrary((s) => s.settings.country);
   const reduce = useLibrary((s) => s.settings.reduceMotion);
   const playList = usePlayer((s) => s.playList);
   const [top, setTop] = useState(0);
   const [hover, setHover] = useState(false);
-  const place = (() => {
-    try {
-      return new Intl.DisplayNames(["en"], { type: "region" }).of(country.toUpperCase()) ?? "the world";
-    } catch {
-      return "the world";
-    }
-  })();
 
   useEffect(() => {
     if (reduce || hover || albums.length < 2) return;
@@ -44,7 +36,7 @@ export function StackHero({ albums, songs }: { albums: Album[]; songs: Track[] }
   return (
     <section className="mb-12 grid items-center gap-10 lg:grid-cols-[1.15fr_1fr]">
       <div>
-                <p className="note mb-3 -rotate-1">hi — here&apos;s what {place} is playing ↓</p>
+                <p className="note mb-3 -rotate-1">hi — fresh from your artists ↓</p>
         {/* phones: the profile button sits on the headline's row, lined up with its first line */}
         <div className="flex items-start justify-between gap-3">
           <h1 className="display text-[54px] sm:text-[72px] xl:text-[92px]">
@@ -90,7 +82,7 @@ export function StackHero({ albums, songs }: { albums: Album[]; songs: Track[] }
           })}
         {front && (
           <div className="brut absolute -bottom-3 left-0 z-20 max-w-[75%] -rotate-2 rounded-xl bg-paper px-3 py-2">
-            <p className="eyebrow">#{top + 1} album this week</p>
+            <p className="eyebrow">New for you</p>
             <p className="truncate font-semibold">{front.title}</p>
             <p className="truncate text-sm text-ink/60">{front.artist}</p>
           </div>

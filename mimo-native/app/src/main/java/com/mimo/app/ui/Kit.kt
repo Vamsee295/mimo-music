@@ -183,7 +183,7 @@ fun TrackRow(
 }
 
 @Composable
-fun TrackMenu(t: Track, open: Boolean, onClose: () -> Unit, onRemove: (() -> Unit)? = null) {
+fun TrackMenu(t: Track, open: Boolean, onClose: () -> Unit, onRemove: (() -> Unit)? = null, extras: (@Composable (close: () -> Unit) -> Unit)? = null) {
     val p = LocalPlayer.current
     val nav = LocalNav.current
     val toast = LocalToast.current
@@ -206,6 +206,7 @@ fun TrackMenu(t: Track, open: Boolean, onClose: () -> Unit, onRemove: (() -> Uni
         if (t.albumId.isNotEmpty()) item("Go to album", "grid") { nav.go(Screen.AlbumPage(t.albumId)) }
         if (t.artistId.isNotEmpty()) item("Go to artist", "user") { nav.go(Screen.ArtistPage(t.artistId, t.artist)) }
         if (onRemove != null) item("Remove", "trash", onRemove)
+        extras?.invoke(onClose)
     }
     if (pick) AddToPlaylist(t) { pick = false }
 }

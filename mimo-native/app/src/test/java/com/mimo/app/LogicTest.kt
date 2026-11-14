@@ -196,6 +196,42 @@ class TextTest {
     }
 }
 
+class ForYouTest {
+    private val now = releasedMs("2026-11-15") + 12 * 3_600_000L
+    private fun ago(d: Int) = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
+        .format(now - d * 86_400_000L) + "T08:00:00Z"
+    private fun s(id: String, artist: String, released: String? = null, genre: String = "Tamil", artistId: String = artist) =
+        Track(id = id, title = "Song $id", artist = artist, artistId = artistId, src = "x", genre = genre, released = released)
+
+    @Test fun artistsAndGenres() {
+        val meta = mapOf("a" to s("a", "Anirudh", artistId = "111"), "s" to s("s", "Sai", genre = "Telugu", artistId = "222"), "o" to s("o", "Old Fav", genre = "Hindi", artistId = "333"))
+        val lib = LibraryState(playLog = listOf(Play("o", 900), Play("o", 901), Play("a", 998), Play("a", 999), Play("s", 999)), playMeta = meta, liked = listOf(s("l", "Liked One", artistId = "444")))
+        val ids = pickArtists(lib, today = 1000)
+        assertEquals(listOf("111", "222", "333", "444"), ids.take(4))
+        assertEquals("Featured fills the rest", 6, ids.size)
+        assertEquals(listOf("Tamil", "Hindi", "Telugu"), pickGenres(lib))
+        assertEquals("no history: Featured only", 2, pickArtists(LibraryState(), 1000).size)
+    }
+
+    @Test fun shelves() {
+        val recent = listOf(
+            listOf(s("a1", "A", ago(3)), s("a2", "A", ago(1)), s("aOld", "A", ago(4000)), s("a3", "A", ago(10))),
+            listOf(s("b1", "B", ago(2)), s("b2", "B", ago(90))),
+        )
+        val hits = listOf(listOf(s("h1", "A"), s("a2", "A", ago(1))), listOf(s("h2", "B")))
+        val r = mixForYou(recent, hits, listOf(s("c1", "C"), s("c2", "C")), now, 8)
+        assertEquals(listOf("a2", "b1", "a1", "a3"), r.newForYou.map { it.id })
+        assertEquals("hits, then chart; nothing repeated from New for You", listOf("h1", "h2", "c1", "c2"), r.trending.map { it.id })
+        assertTrue(mixForYou(emptyList(), emptyList(), emptyList(), now).trending.isEmpty())
+    }
+
+    @Test fun albums() {
+        fun al(id: String, released: String? = null) = Album(id, id, "A", released = released)
+        assertEquals(listOf("new", "mid", "ch1"), mixAlbums(listOf(listOf(al("old", ago(400)), al("new", ago(5))), listOf(al("mid", ago(60)))), listOf(al("ch1"), al("new")), now).map { it.id })
+        assertEquals(0L, releasedMs(null)); assertTrue(releasedMs("2026-10-26T07:00:00-07:00") > 0)
+    }
+}
+
 class BackupTest {
     private val lib = LibraryState(
         name = "Vamsee", liked = listOf(t("1")), songs = listOf(t("1"), t("2")),

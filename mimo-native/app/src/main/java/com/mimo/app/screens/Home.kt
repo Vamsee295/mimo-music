@@ -50,8 +50,8 @@ fun HomeScreen() {
     val nav = LocalNav.current
     val c = Mimo.colors
     val s = lib.settings
-    val songs = rememberLoad("home-songs") { app.catalog.topSongs(null, 24) }
-    val albums = rememberLoad("home-albums") { app.catalog.topAlbums(null, 12) }
+    // For You: new + trending from the artists you listen to, rebuilt once a day (data/ForYou.kt)
+    val forYou = rememberLoad("for-you") { app.forYou.load() }
     // your top 2 artists from real plays (30s+), for "Because you like"
     val topArtists = remember(lib.playLog) {
         replay(lib.playLog, lib.playMeta, 0).artists.take(2).mapNotNull { a ->
@@ -62,9 +62,14 @@ fun HomeScreen() {
         var n = 0 // section numbers, counted while the list is built (not when items scroll in)
         item {
             PageHeader("Music that", hl = "moves", eyebrow = greeting() + if (lib.name.isNotEmpty()) ", ${lib.name}" else "",
-                note = "your daily mix, straight from the chart ↓", trailing = { ProfileButton() })
+                note = "fresh from your artists, every day ↓", trailing = { ProfileButton() })
         }
         if (!looksLikeKey(cleanKey(lib.ytKey))) item { KeyPrompt() }
+
+        forYou.data?.newForYou?.takeIf { it.isNotEmpty() }?.let { fresh ->
+            section(++n, "Fresh from your artists", "New for You")
+            songGrid(fresh)
+        }
 
         if (s.homeMadeForYou) madeForYou(lib) { ++n }
 
@@ -76,10 +81,10 @@ fun HomeScreen() {
             val k = ++n
             item(key = "because:$id") { BecauseYouLike(k, id, name) }
         }
-        section(++n, "This week", "Top Albums") { nav.go(Screen.New) }
+        section(++n, "From your artists", "New Albums")
         when {
-            albums.data != null -> albumShelf(albums.data)
-            albums.error -> item { ErrorNote(albums.retry) }
+            forYou.data != null -> albumShelf(forYou.data.albums)
+            forYou.error -> item { ErrorNote(forYou.retry) }
             else -> item { Loading() }
         }
         if (s.homeFeatured) {
@@ -95,10 +100,10 @@ fun HomeScreen() {
             items(Mood.entries) { MoodCard(it) }
         }
         if (s.homeCharts) {
-            section(++n, "The chart", "Top Songs") { nav.go(Screen.GenrePage(0, "Top Songs")) }
+            section(++n, "Picked daily", "Trending for You")
             when {
-                songs.data != null -> songGrid(songs.data)
-                songs.error -> item { ErrorNote(songs.retry) }
+                forYou.data != null -> songGrid(forYou.data.trending)
+                forYou.error -> item { ErrorNote(forYou.retry) }
                 else -> item { Loading() }
             }
         }

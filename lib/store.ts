@@ -18,6 +18,7 @@ export type Track = {
   n?: number; // track number on its album
   genre?: string; // Apple tags Indian songs by language: "Tamil", "Telugu", …
   year?: string;
+  released?: string; // full release date (ISO), for "new for you"
 };
 
 export type Repeat = "off" | "all" | "one";

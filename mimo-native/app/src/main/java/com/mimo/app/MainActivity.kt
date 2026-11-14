@@ -87,7 +87,7 @@ private fun Root() {
                 AnimatedVisibility(
                     nowPlaying && player.current != null,
                     enter = slideInVertically(tween(320)) { it } + fadeIn(),
-                    exit = slideOutVertically(tween(260)) { it } + fadeOut(),
+                    exit = ExitTransition.None, // closing goes straight to the mini player
                 ) { NowPlaying(onClose = { nowPlaying = false }) }
             }
         }

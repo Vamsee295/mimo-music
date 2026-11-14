@@ -12,7 +12,7 @@ import { fmt } from "./TrackRow";
 import { Swipe, toast } from "./Swipe";
 import { btnPrimary, btnSecondary } from "./ui";
 import { hasIndic, romanize } from "@/lib/romanize";
-import { getBio, getLyrics } from "@/lib/extras";
+import { cleanTitle, getBio, getLyrics } from "@/lib/extras";
 import { useData } from "@/lib/useData";
 import { BACK_EVENT, engine, nativeLocalCopy, nativeMedia, offlineStream, setStatusBarHidden, type Stream } from "@/lib/native";
 import { isBackground, useForeground } from "@/lib/appState";
@@ -693,7 +693,9 @@ export function PlayerBar() {
     window.addEventListener("scroll", schedule, true);
     window.addEventListener("resize", place);
     window.addEventListener("animationend", place, true); // the sheet finished sliding in (frames may be throttled)
+    window.addEventListener("mimo:np-move", place); // the sheet is being pulled down (useDragToClose)
     return () => {
+      window.removeEventListener("mimo:np-move", place);
       cancelAnimationFrame(raf);
       ro.disconnect();
       window.removeEventListener("scroll", schedule, true);
@@ -890,9 +892,10 @@ function Scrubber({ sk: raw, thin, apple }: { sk: Seek; thin?: boolean; apple?: 
   const num = (n: number) => (Number.isFinite(n) ? n : 0);
   const sk = { ...raw, time: num(raw.time), dur: num(raw.dur) };
   const p = `${(sk.time / (sk.dur || 1)) * 100}%`;
+  const idle = !sk.dur; // no playable song (no key / not found yet): a dim, untouchable bar, no fake 0:00
   if (apple)
     return (
-      <div className="tabular-nums">
+      <div className={`tabular-nums transition-opacity ${idle ? "pointer-events-none opacity-35" : ""}`}>
         <input
           type="range"
           min={0}
@@ -905,8 +908,8 @@ function Scrubber({ sk: raw, thin, apple }: { sk: Seek; thin?: boolean; apple?: 
           style={{ "--p": p } as CSSProperties}
         />
         <div className="-mt-1 flex justify-between text-[12px] text-white/55">
-          <span>{fmt(sk.time)}</span>
-          <span>-{fmt(Math.max(0, sk.dur - sk.time))}</span>
+          <span>{idle ? "--:--" : fmt(sk.time)}</span>
+          <span>{idle ? "--:--" : `-${fmt(Math.max(0, sk.dur - sk.time))}`}</span>
         </div>
       </div>
     );
@@ -1125,7 +1128,7 @@ function NowPlaying({
   const [tab, setTab] = useState<Tab>("lyrics");
   const [panelOpen, setPanelOpen] = useState(false); // phone: the panel takes the cover's place
   const [menu, setMenu] = useState(false);
-  const startY = useRef(0);
+  const drag = useDragToClose(!panelOpen && !menu, onClose);
   const openTab = (t: Tab) => {
     if (panelOpen && tab === t) setPanelOpen(false);
     else {
@@ -1134,12 +1137,20 @@ function NowPlaying({
     }
   };
   const round = "grid size-10 place-items-center rounded-full bg-white/15 text-white backdrop-blur-md transition active:scale-90";
+  // "Hukum (From "Jailer")" → title "Hukum", and "Jailer" goes in the line above; "… - Single" albums lose the suffix
+  const title = cleanTitle(cur.title);
+  const from = cur.title.match(/\(from\s+["“]?([^"”)]+)["”]?\)/i)?.[1] ?? cleanTitle(cur.album);
 
   const meta = (small?: boolean) => (
     <div className="flex items-center gap-3">
       {small && <img src={cur.art} alt="" className="size-14 shrink-0 rounded-lg object-cover shadow-lg" />}
       <div className="min-w-0 flex-1">
-        <p className={`truncate font-semibold text-white ${small ? "text-[17px]" : "text-[24px] leading-tight"}`}>{cur.title}</p>
+        {small ? (
+          <p className="truncate text-[17px] font-semibold text-white">{title}</p>
+        ) : (
+          // Mimo's Anton headline: the one brand touch on this dark screen
+          <p className="display line-clamp-2 text-[32px] text-white [@media(max-height:720px)]:line-clamp-1 [@media(max-height:720px)]:text-[26px]">{title}</p>
+        )}
         <Link href={`/artist?id=${cur.artistId}`} onClick={onClose} className={`block truncate text-white/60 hover:underline ${small ? "text-[15px]" : "text-[19px]"}`}>
           {cur.artist}
         </Link>
@@ -1157,9 +1168,9 @@ function NowPlaying({
 
   return (
     <div
-      className="np-enter theme-dark fixed inset-0 z-50 overflow-clip bg-black text-white"
-      onTouchStart={(e) => (startY.current = e.touches[0].clientY)}
-      onTouchEnd={(e) => e.changedTouches[0].clientY - startY.current > 120 && !panelOpen && !menu && onClose()}
+      // phones: the sheet owns vertical touches while it can be pulled (nothing scrolls in it then)
+      className={`np-enter theme-dark fixed inset-0 z-50 select-none overflow-clip bg-black text-white ${!panelOpen && !menu ? "max-md:touch-none" : ""}`}
+      {...drag}
     >
       {/* the cover's own colours, blurred, as the backdrop (Apple Music) */}
       <img src={cur.art} alt="" className="absolute inset-0 size-full scale-150 object-cover opacity-70 blur-3xl" />
@@ -1168,13 +1179,18 @@ function NowPlaying({
         style={{ background: tint ? `linear-gradient(180deg, rgb(${tint} / 0.45) 0%, rgb(0 0 0 / 0.35) 45%, rgb(0 0 0 / 0.7) 100%)` : "rgb(0 0 0 / 0.55)" }}
       />
 
-      <div className="relative mx-auto flex h-full max-w-6xl flex-col px-6 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(0.5rem,env(safe-area-inset-top))] md:px-10">
-        {/* grabber: tap or swipe down to close */}
-        <button onClick={onClose} aria-label="Close Now Playing" className="mx-auto mb-1 flex h-7 w-24 items-center justify-center">
+      <div className="relative mx-auto flex h-full max-w-6xl flex-col px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(0.5rem,env(safe-area-inset-top))] md:px-10">
+        {/* grabber: press and pull down to close (a mouse/finger tap does nothing; Enter/Space still closes) */}
+        <button
+          onClick={(e) => e.detail === 0 && onClose()}
+          aria-label="Close Now Playing (pull down)"
+          className="mx-auto mb-1 flex h-7 w-24 cursor-grab items-center justify-center active:cursor-grabbing"
+        >
           <span className="h-1.5 w-10 rounded-full bg-white/40" />
         </button>
-        <Link href={`/album?id=${cur.albumId}`} onClick={onClose} className="mb-3 truncate text-center text-[13px] text-white/60 hover:underline md:mb-6">
-          Playing from {cur.album}
+        <Link href={`/album?id=${cur.albumId}`} onClick={onClose} className="mb-3 block truncate text-center hover:underline md:mb-6">
+          <span className="block font-mono text-[10px] uppercase tracking-[0.14em] text-white/45">Playing from</span>
+          <span className="text-[13px] font-medium text-white/80">{from}</span>
         </Link>
 
         <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] gap-8 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:gap-14">
@@ -1194,14 +1210,14 @@ function NowPlaying({
             ) : null}
             <div className={`flex min-h-0 flex-1 flex-col justify-center ${panelOpen ? "max-md:hidden" : ""}`}>
               {/* The cover. For YouTube songs the player (covered by this same art) sits exactly on top of it. */}
-              <div className="relative mx-auto w-full max-w-[min(100%,28rem,44vh)]">
+              <div className="relative mx-auto w-full max-w-[min(100%,28rem,52vh)] [@media(max-height:720px)]:max-w-[min(100%,40vh)]">
                 {/* the player's spot; removed while Lyrics / Up Next replace the cover (phone) or the ⋯ menu is open (the
                     player sits above this whole screen), which hides it */}
                 {mode === "yt" && !panelOpen && !menu && <div ref={setSlot} aria-hidden className="absolute inset-0 z-10" />}
                 <img
                   src={cur.art}
                   alt=""
-                  className={`aspect-square w-full rounded-xl object-cover shadow-[0_24px_60px_rgba(0,0,0,0.5)] transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${playing ? "scale-100" : "scale-[0.82]"}`}
+                  className={`aspect-square w-full rounded-xl object-cover shadow-[0_24px_60px_rgba(0,0,0,0.5)] transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${playing ? "scale-100" : "scale-[0.9]"}`}
                 />
                 {mode === "finding" && (
                   <span className="absolute bottom-3 left-1/2 z-20 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-[13px] backdrop-blur">
@@ -1209,7 +1225,7 @@ function NowPlaying({
                   </span>
                 )}
               </div>
-              <div className="mx-auto mt-8 w-full max-w-[28rem]">
+              <div className="mx-auto mt-6 w-full max-w-[28rem]">
                 {meta()}
               </div>
             </div>
@@ -1217,16 +1233,17 @@ function NowPlaying({
             <div className="mx-auto mt-5 w-full max-w-[28rem] shrink-0">
               <Scrubber sk={sk} apple />
               {isLocal(cur) && <p className="mt-1 text-center text-[12px] text-white/60">On this device · offline</p>}
-              {why && (
-                <p className="mt-2 rounded-xl bg-white/10 px-3 py-2 text-center text-[13px] text-white/85">
-                  {why}{" "}
-                  {!hasKey && (
-                    <Link href="/settings?s=youtube" onClick={onClose} className="font-semibold underline">
-                      Open Settings →
-                    </Link>
-                  )}
-                </p>
-              )}
+              {why &&
+                (!hasKey ? (
+                  // one slim line instead of a box: the controls don't jump down
+                  <Link href="/settings?s=youtube" onClick={onClose} className="mx-auto mt-1 block w-fit max-w-full truncate whitespace-nowrap rounded-full bg-white/10 px-3 py-1 text-[12px] font-medium text-white/85">
+                    Add YouTube key to play full songs →
+                  </Link>
+                ) : (
+                  <p className="mt-1 truncate text-center text-[12px] text-white/65" title={why}>
+                    {why}
+                  </p>
+                ))}
               <div className="my-5 flex items-center justify-center gap-14">
                 <button onClick={prev} aria-label="Previous" className="np-btn">
                   <Icon name="rewind" className="size-12" />
@@ -1238,7 +1255,7 @@ function NowPlaying({
                   <Icon name="forward" className="size-12" />
                 </button>
               </div>
-              {/* bottom row: Lyrics · Up Next (phone opens them in the cover's place) */}
+              {/* bottom row: Lyrics · Up Next (phone opens them in the cover's place); sleep timer lives in the ⋯ menu */}
               <div className="flex items-center justify-between px-6 md:hidden">
                 {(
                   [
@@ -1303,6 +1320,73 @@ function NowPlaying({
       )}
     </div>
   );
+}
+
+/**
+ * Press and pull Now Playing down to close it (Apple Music / BitChord), with a finger or a mouse: the sheet
+ * follows the pointer, shrinking and rounding its corners to reveal the page and the mini player underneath.
+ * Let go past a quarter of the screen (or with a quick flick) and it becomes the mini player; otherwise it springs back.
+ * Styles are set on the sheet element itself, so dragging never re-renders React. Sliders, text fields and
+ * anything marked data-no-drag keep their own pointer.
+ */
+function useDragToClose(enabled: boolean, onClose: () => void) {
+  const g = useRef<{ el: HTMLElement; id: number; y0: number; t0: number; dy: number; on: boolean } | null>(null);
+  const moved = () => window.dispatchEvent(new Event("mimo:np-move")); // the YouTube player follows the cover
+  const paint = (el: HTMLElement, dy: number, ms = 0, ease = "cubic-bezier(0.32,0.72,0,1)") => {
+    const k = Math.min(dy / window.innerHeight, 1);
+    el.style.transition = ms ? `transform ${ms}ms ${ease}, border-radius ${ms}ms ${ease}` : "none";
+    el.style.transform = dy ? `translateY(${dy}px) scale(${1 - k * 0.12})` : "";
+    el.style.borderRadius = dy ? `${Math.min(12 + dy / 6, 32)}px` : "";
+    el.style.transformOrigin = "50% 0%";
+  };
+  const animate = (el: HTMLElement, to: number, ms: number) => {
+    paint(el, to, ms);
+    const t0 = performance.now();
+    const follow = () => (moved(), performance.now() - t0 < ms + 20 && requestAnimationFrame(follow));
+    follow();
+  };
+  return {
+    onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
+      const target = e.target as HTMLElement;
+      if (!enabled || !e.isPrimary || e.button !== 0 || target.closest("input, textarea, [data-no-drag]")) return void (g.current = null);
+      g.current = { el: e.currentTarget, id: e.pointerId, y0: e.clientY, t0: performance.now(), dy: 0, on: false };
+    },
+    onPointerMove: (e: React.PointerEvent<HTMLElement>) => {
+      const d = g.current;
+      if (!d || e.pointerId !== d.id) return;
+      const dy = Math.max(0, e.clientY - d.y0);
+      if (!d.on) {
+        if (dy < 8) return; // a press without moving stays a tap (buttons still work)
+        d.on = true;
+        d.el.setPointerCapture(d.id); // keep following even when the pointer leaves the sheet
+      }
+      // follows the pointer 1:1, then gets heavier past half the screen
+      const half = window.innerHeight / 2;
+      d.dy = dy < half ? dy : half + (dy - half) * 0.5;
+      paint(d.el, d.dy);
+      moved();
+    },
+    onPointerUp: (e: React.PointerEvent<HTMLElement>) => {
+      const d = g.current;
+      g.current = null;
+      if (!d?.on || e.pointerId !== d.id) return;
+      // the release ends a drag, not a tap: don't let it click the button / link underneath
+      // (the click comes right after pointerup, before any timer; if none comes, the guard is gone a tick later)
+      const eat = (c: MouseEvent) => (c.stopPropagation(), c.preventDefault());
+      window.addEventListener("click", eat, { capture: true, once: true });
+      setTimeout(() => window.removeEventListener("click", eat, { capture: true }), 0);
+      const speed = d.dy / Math.max(1, performance.now() - d.t0); // px per ms
+      // far enough (or a flick): straight to the mini player, no slide-away; else back up
+      if (d.dy > window.innerHeight * 0.25 || (speed > 0.5 && d.dy > 60)) onClose();
+      else animate(d.el, 0, 320);
+    },
+    onPointerCancel: () => {
+      const d = g.current;
+      g.current = null;
+      if (d?.on) animate(d.el, 0, 320);
+    },
+    onDragStart: (e: React.DragEvent) => e.preventDefault(), // a mouse drag must move the sheet, not ghost-drag the cover image
+  };
 }
 
 /** The ⋯ menu in Now Playing: a frosted-glass sheet (Apple Music style). */

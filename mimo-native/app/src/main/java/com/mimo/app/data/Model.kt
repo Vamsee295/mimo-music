@@ -20,6 +20,7 @@ data class Track(
     val n: Int? = null, // track number on its album
     val genre: String? = null, // Apple tags Indian songs by language: "Tamil", "Telugu", …
     val year: String? = null,
+    val released: String? = null, // full release date (ISO), for "New for You"
 )
 
 @Serializable
@@ -35,6 +36,7 @@ data class Album(
     val explicit: Boolean = false,
     val copyright: String = "",
     val added: Long? = null, // when you saved it (Library "Recents" sort)
+    val released: String? = null, // full release date (ISO)
 )
 
 @Serializable
