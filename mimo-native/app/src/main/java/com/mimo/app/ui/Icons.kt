@@ -1,0 +1,69 @@
+package com.mimo.app.ui
+
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.addPathNodes
+import androidx.compose.ui.unit.dp
+
+// The web app's icon set (components/Icon.tsx), same 24x24 paths.
+private val PATHS = mapOf(
+    "play" to "M8 5v14l11-7z",
+    "pause" to "M6 5h4v14H6zM14 5h4v14h-4z",
+    "next" to "M6 18l8.5-6L6 6v12zM16 6h2v12h-2z",
+    "prev" to "M6 6h2v12H6zm3.5 6l8.5 6V6z",
+    "shuffle" to "M10.6 9.2L5.4 4 4 5.4l5.2 5.2 1.4-1.4zM14.5 4l2 2L4 18.6 5.4 20 18 7.5l2 2V4h-5.5zm.3 9.4l-1.4 1.4 3.1 3.1-2 2H20v-5.5l-2 2-3.2-3z",
+    "repeat" to "M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z",
+    "queue" to "M3 6h12v2H3zm0 4h12v2H3zm0 4h8v2H3zm14-4v8l5-4z",
+    "more" to "M6 10a2 2 0 100 4 2 2 0 000-4zm6 0a2 2 0 100 4 2 2 0 000-4zm6 0a2 2 0 100 4 2 2 0 000-4z",
+    "volume" to "M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0014 8v8a4.5 4.5 0 002.5-4z",
+    "search" to "M15.5 14h-.8l-.3-.3A6.5 6.5 0 109.5 16a6.5 6.5 0 004.2-1.6l.3.3v.8l5 5 1.5-1.5-5-5zm-6 0a4.5 4.5 0 110-9 4.5 4.5 0 010 9z",
+    "share" to "M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11A2.99 2.99 0 0021 5a3 3 0 10-5.91.7L8.04 9.81A3 3 0 103 12a3 3 0 005.04 2.19l7.12 4.16c-.05.21-.08.43-.08.65A2.92 2.92 0 1018 16.08z",
+    "radio" to "M3.24 6.15A2 2 0 002 8v12a2 2 0 002 2h16a2 2 0 002-2V8a2 2 0 00-2-2H8.3l8.26-3.34L15.88 1 3.24 6.15zM7 20a3 3 0 110-6 3 3 0 010 6zm13-8h-2v-2h-2v2H4V8h16v4z",
+    "home" to "M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z",
+    "close" to "M19 6.4L17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z",
+    "heart" to "M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z",
+    "heartOutline" to "M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z",
+    "grid" to "M4 4h7v7H4zm9 0h7v7h-7zM4 13h7v7H4zm9 0h7v7h-7z",
+    "library" to "M20 2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 5h-3v5.5a2.5 2.5 0 01-5 0 2.5 2.5 0 012.5-2.5c.57 0 1.08.19 1.5.51V5h4v2zM4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6z",
+    "settings" to "M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 00-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 00-.12-.61l-2.01-1.58zM12 15.6a3.6 3.6 0 110-7.2 3.6 3.6 0 010 7.2z",
+    "user" to "M12 12a4 4 0 100-8 4 4 0 000 8zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z",
+    "plus" to "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z",
+    "down" to "M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z",
+    "right" to "M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z",
+    "left" to "M15.41 16.59L10.83 12l4.58-4.59L14 6l-6 6 6 6z",
+    "clock" to "M12 2a10 10 0 100 20 10 10 0 000-20zm1 11H8v-2h3V6h2v7z",
+    "check" to "M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z",
+    "sidebar" to "M3 4h18a1 1 0 011 1v14a1 1 0 01-1 1H3a1 1 0 01-1-1V5a1 1 0 011-1zm1 2v12h5V6H4zm7 0v12h9V6h-9z",
+    "moon" to "M9 2c-1.05 0-2.05.16-3 .46 4.06 1.27 7 5.06 7 9.54 0 4.48-2.94 8.27-7 9.54.95.3 1.95.46 3 .46 5.52 0 10-4.48 10-10S14.52 2 9 2z",
+    "lyrics" to "M14 17H4v2h10v-2zm6-8H4v2h16V9zM4 15h16v-2H4v2zM4 5v2h16V5H4z",
+    "info" to "M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z",
+    "device" to "M17 1H7c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-2-2-2zm0 18H7V5h10v14zm-5-2.5a1.5 1.5 0 110-3 1.5 1.5 0 010 3z",
+    "upload" to "M5 20h14v-2H5v2zm0-10h4v6h6v-6h4l-7-7-7 7z",
+    "pencil" to "M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25zM20.7 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z",
+    "note" to "M12 3v10.55A4 4 0 1014 17V7h4V3h-6z",
+    "trash" to "M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z",
+    "pin" to "M16 3H8v2h1v6l-3 3v2h5v6h2v-6h5v-2l-3-3V5h1V3z",
+    "playSoft" to "M8 5.6v12.8a1 1 0 001.5.86l10.4-6.4a1 1 0 000-1.72L9.5 4.74A1 1 0 008 5.6z",
+    "pauseSoft" to "M7 5h3v14H7zM14 5h3v14h-3z",
+    "rewind" to "M11.2 6.6v10.8L3.6 12zM20.4 6.6v10.8L12.8 12z",
+    "forward" to "M12.8 6.6v10.8l7.6-5.4zM3.6 6.6v10.8l7.6-5.4z",
+    "lyricsBubble" to "M5 3h14a2 2 0 012 2v10a2 2 0 01-2 2h-6.5L8 20.5V17H5a2 2 0 01-2-2V5a2 2 0 012-2zm3.5 5A1.5 1.5 0 007 9.5c0 .8.6 1.4 1.3 1.5-.1.6-.5 1.1-1.1 1.4l.5.8c1.5-.6 2.3-1.8 2.3-3.4A1.5 1.5 0 008.5 8zm5 0A1.5 1.5 0 0012 9.5c0 .8.6 1.4 1.3 1.5-.1.6-.5 1.1-1.1 1.4l.5.8c1.5-.6 2.3-1.8 2.3-3.4A1.5 1.5 0 0013.5 8z",
+    "list" to "M4 5.5h2.2v2.2H4zm4.5.1H20v2H8.5zM4 10.9h2.2v2.2H4zm4.5.1H20v2H8.5zM4 16.3h2.2v2.2H4zm4.5.1H20v2H8.5z",
+)
+private val SOFT = setOf("playSoft", "pauseSoft", "rewind", "forward") // stroked too: rounded corners
+private val cache = HashMap<String, ImageVector>()
+
+/** Icon by its Icon.tsx name. Tinted by the Icon composable that draws it. */
+fun icon(name: String): ImageVector = cache.getOrPut(name) {
+    val soft = name in SOFT
+    ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).apply {
+        addPath(
+            pathData = addPathNodes(PATHS.getValue(name)),
+            fill = SolidColor(androidx.compose.ui.graphics.Color.Black),
+            stroke = if (soft) SolidColor(androidx.compose.ui.graphics.Color.Black) else null,
+            strokeLineWidth = if (soft) 2.2f else 0f,
+            strokeLineJoin = StrokeJoin.Round,
+        )
+    }.build()
+}

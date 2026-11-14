@@ -18,7 +18,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
+import com.mimo.app.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -65,13 +69,16 @@ val Night = MimoColors(
 )
 
 // The five families from app/layout.tsx (Inter, Anton, Barlow Condensed, Caveat, JetBrains Mono).
-// ponytail: system stand-ins until the OFL .ttf files are dropped into res/font; then swap each to
-// FontFamily(Font(R.font.anton)) etc. Nothing else changes.
-val Inter = FontFamily.SansSerif
-val Anton = FontFamily.SansSerif
-val Barlow = FontFamily.SansSerif
-val Caveat = FontFamily.Cursive
-val Mono = FontFamily.Monospace
+// Bundled from google/fonts (OFL). Inter, Caveat and JetBrains Mono are variable fonts: one file, weight set by axis.
+@OptIn(ExperimentalTextApi::class)
+private fun variable(res: Int, vararg weights: FontWeight) =
+    FontFamily(weights.map { Font(res, it, variationSettings = FontVariation.Settings(FontVariation.weight(it.weight))) })
+
+val Inter = variable(R.font.inter, FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold)
+val Anton = FontFamily(Font(R.font.anton))
+val Barlow = FontFamily(Font(R.font.barlow_semibold, FontWeight.SemiBold), Font(R.font.barlow_bold, FontWeight.Bold))
+val Caveat = variable(R.font.caveat, FontWeight.Normal)
+val Mono = variable(R.font.jetbrains_mono, FontWeight.Normal)
 
 /** The CSS utility classes as text styles: .display, .label-cond, .eyebrow, .note */
 object MimoType {
@@ -89,8 +96,8 @@ object Mimo {
 }
 
 @Composable
-fun MimoTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
-    val c = if (dark) Night else Editorial
+fun MimoTheme(dark: Boolean = isSystemInDarkTheme(), accent: Color? = null, content: @Composable () -> Unit) {
+    val c = (if (dark) Night else Editorial).let { if (accent != null) it.copy(accent = accent) else it }
     val scheme = (if (dark) darkColorScheme() else lightColorScheme()).copy(
         primary = c.accent, onPrimary = c.paper,
         background = c.paper, onBackground = c.ink,
@@ -127,3 +134,7 @@ fun Modifier.dottedPaper(c: MimoColors) = background(c.paper).drawBehind {
         y += step
     }
 }
+
+/** "#c8603a" → Color, or null for anything else (the theme's own rust then). */
+fun parseAccent(hex: String): Color? =
+    Regex("^#([0-9a-fA-F]{6})$").find(hex)?.groupValues?.get(1)?.toLong(16)?.let { Color(0xFF000000 or it) }
