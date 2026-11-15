@@ -49,3 +49,47 @@ export function useArtColor(url: string | undefined) {
   }, [url]);
   return color && color.url === url ? color.rgb : null;
 }
+
+/**
+ * Now Playing's backdrop: the cover shrunk to an 8×8 grid of its own colours and smoothly scaled back up, a soft
+ * multi-colour wash (BitChord's mesh). Far cheaper than blurring the full cover with CSS, which made low-end
+ * phones stutter. The bottom half is the cover's bottom mirrored sideways, so the wash doesn't echo the top.
+ * Returns a small data: URL (48×48), or null while loading / if the image can't be read.
+ */
+export function useArtMesh(url: string | undefined) {
+  const [mesh, setMesh] = useState<{ url: string; data: string } | null>(null);
+  useEffect(() => {
+    if (!url) return;
+    let live = true;
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      try {
+        const grid = document.createElement("canvas");
+        grid.width = grid.height = 8;
+        const g = grid.getContext("2d")!;
+        const w = img.naturalWidth, h = img.naturalHeight;
+        g.drawImage(img, 0, 0, w, h / 2, 0, 0, 8, 4); // top half as it is
+        g.save();
+        g.translate(8, 0);
+        g.scale(-1, 1); // bottom half mirrored sideways
+        g.drawImage(img, 0, h / 2, w, h / 2, 0, 4, 8, 4);
+        g.restore();
+        const big = document.createElement("canvas");
+        big.width = big.height = 48; // smooth upscale here; the browser stretches 48px → screen smoothly too
+        const b = big.getContext("2d")!;
+        b.imageSmoothingEnabled = true;
+        b.imageSmoothingQuality = "high";
+        b.drawImage(grid, 0, 0, 48, 48);
+        if (live) setMesh({ url, data: big.toDataURL("image/png") });
+      } catch {
+        /* image not readable (no CORS): the tint gradient alone */
+      }
+    };
+    img.src = url.replace("600x600", "100x100");
+    return () => {
+      live = false;
+    };
+  }, [url]);
+  return mesh && mesh.url === url ? mesh.data : null;
+}

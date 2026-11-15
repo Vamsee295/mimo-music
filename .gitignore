@@ -46,3 +46,12 @@ next-env.d.ts
 /Music-repo/
 /.impeccable/
 *.apk
+
+# secrets, anywhere in the repo: signing keys, their passwords, machine paths, local Claude settings
+*.jks
+*.keystore
+*.p12
+keystore.properties
+local.properties
+google-services.json
+.claude/settings.local.json

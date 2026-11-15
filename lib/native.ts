@@ -230,3 +230,17 @@ export async function shareImage(name: string, dataUrl: string, title: string) {
   a.download = name;
   a.click();
 }
+
+/** Share plain text: the Android share sheet in the app, the browser's share on the web. false = no share sheet. */
+export async function shareText(text: string) {
+  if (isNative()) {
+    const { Share } = await import("@capacitor/share");
+    await Share.share({ text, dialogTitle: "Invite to the party" });
+    return true;
+  }
+  if (navigator.share) {
+    await navigator.share({ text });
+    return true;
+  }
+  return false;
+}

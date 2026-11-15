@@ -1,7 +1,10 @@
 package com.mimo.app.screens
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -325,11 +328,26 @@ private fun LyricsView(t: Track, pos: Long, white: Color) {
                 LaunchedEffect(now) { if (now >= 0) list.animateScrollToItem(now, -200) }
                 LazyColumn(state = list, verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(vertical = 120.dp)) {
                     itemsIndexed(synced) { i, line ->
-                        Text(
-                            shown(line.text).ifEmpty { "♪" }, style = style,
-                            color = when { i == now -> white; i < now -> white.copy(alpha = 0.35f); else -> white.copy(alpha = 0.5f) },
-                            modifier = Modifier.fillMaxWidth().clickable { p.seekTo((line.t * 1000).toLong()) },
-                        )
+                        if (i == now && line.spans != null) {
+                            @OptIn(ExperimentalLayoutApi::class)
+                            FlowRow(modifier = Modifier.fillMaxWidth().clickable { p.seekTo((line.t * 1000).toLong()) }) {
+                                line.spans!!.forEach { span ->
+                                    val sung = pos >= (span.t * 1000).toLong()
+                                    Text(
+                                        text = shown(span.text),
+                                        color = if (sung) white else white.copy(alpha = 0.35f),
+                                        style = style,
+                                        modifier = Modifier.animateContentSize(),
+                                    )
+                                }
+                            }
+                        } else {
+                            Text(
+                                shown(line.text).ifEmpty { "♪" }, style = style,
+                                color = when { i == now -> white; i < now -> white.copy(alpha = 0.35f); else -> white.copy(alpha = 0.5f) },
+                                modifier = Modifier.fillMaxWidth().clickable { p.seekTo((line.t * 1000).toLong()) },
+                            )
+                        }
                     }
                 }
             }

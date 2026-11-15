@@ -20,9 +20,10 @@ export type Backup = {
 
 type LibraryLike = Omit<Backup, "app" | "version" | "exported" | "settings"> & { settings: Settings };
 
-/** Everything worth keeping, minus the YouTube API key (backups get shared and stored in odd places). */
+/** Everything worth keeping, minus the API keys and tokens (backups get shared and stored in odd places). */
 export function makeBackup(lib: LibraryLike): Backup {
-  const { ytKey: _omit, ...settings } = lib.settings; // eslint-disable-line @typescript-eslint/no-unused-vars
+  // keys and tokens never go in a file that gets shared and stored in odd places
+  const { ytKey: _k, listenBrainzToken: _l, spotifyId: _i, spotifySecret: _s, ...settings } = lib.settings; // eslint-disable-line @typescript-eslint/no-unused-vars
   return {
     app: "mimo",
     version: 1,

@@ -1,7 +1,8 @@
 // Now Playing extras: lyrics (LRCLIB, then lyrics.ovh; free, no key) and artist bio (Wikipedia summary API).
 import type { Track } from "./store";
 
-export type LyricLine = { t: number; text: string };
+export type LyricSpan = { t: number; end: number; text: string };
+export type LyricLine = { t: number; text: string; spans?: LyricSpan[] };
 export type Lyrics = { synced: LyricLine[] | null; plain: string | null; instrumental: boolean };
 export type Bio = { title: string; extract: string; image?: string; url: string };
 
@@ -10,6 +11,56 @@ const once = <T>(key: string, fn: () => Promise<T>) => {
   if (!cache.has(key)) cache.set(key, fn().catch((e) => (cache.delete(key), Promise.reject(e))));
   return cache.get(key) as Promise<T>;
 };
+
+/** "00:01:23.45" or "01:23.45" or "83.45" → 83.45 */
+export function parseTime(s: string): number {
+  if (!s) return 0;
+  const parts = s.trim().split(":");
+  if (parts.length === 3) return Number(parts[0]) * 3600 + Number(parts[1]) * 60 + Number(parts[2]);
+  if (parts.length === 2) return Number(parts[0]) * 60 + Number(parts[1]);
+  return Number(s) || 0;
+}
+
+/** Apple Music TTML format: <p begin="..." end="..."> <span begin="..." end="...">word </span> </p> */
+export function parseTtml(ttml: string): LyricLine[] {
+  const pRegex = /<p\b[^>]*begin="([^"]+)"[^>]*end="([^"]+)"[^>]*>([\s\S]*?)<\/p>/gi;
+  const spanRegex = /<span\b[^>]*begin="([^"]+)"[^>]*end="([^"]+)"[^>]*>([\s\S]*?)<\/span>/gi;
+  const lines: LyricLine[] = [];
+  let pMatch: RegExpExecArray | null;
+
+  while ((pMatch = pRegex.exec(ttml)) !== null) {
+    const beginStr = pMatch[1];
+    const pBody = pMatch[3];
+    const t = parseTime(beginStr);
+
+    const spans: LyricSpan[] = [];
+    let sMatch: RegExpExecArray | null;
+    while ((sMatch = spanRegex.exec(pBody)) !== null) {
+      const sBegin = parseTime(sMatch[1]);
+      const sEnd = parseTime(sMatch[2]);
+      const sText = sMatch[3]
+        .replace(/<[^>]+>/g, "")
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"');
+      spans.push({ t: sBegin, end: sEnd, text: sText });
+    }
+
+    const text = (spans.length ? spans.map((s) => s.text).join("") : pBody.replace(/<[^>]+>/g, ""))
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .trim();
+
+    if (text) {
+      lines.push({ t, text, spans: spans.length ? spans : undefined });
+    }
+  }
+
+  return lines.sort((a, b) => a.t - b.t);
+}
 
 /** "Hukum (From \"Jailer\") [feat. X]" → "Hukum" — LRCLIB matches on the bare title. */
 export const cleanTitle = (s: string) =>
@@ -47,13 +98,39 @@ const lrclib = async (path: string, params: Record<string, string>) => {
   return Array.isArray(j) ? j : [j];
 };
 
-/** Lyrics from LRCLIB, trying progressively looser lookups until one has them:
- *  1. title + artist search   2. exact signature (title, artist, album, length)
- *  3. free-text search        4. title only — but only a row of the same length (else it's another song). */
+/** BiniLyrics: Apple Music word/syllable TTML. Free, no key. */
+export async function fetchBiniLyrics(title: string, artist: string, duration: number): Promise<Lyrics | null> {
+  try {
+    const q = new URLSearchParams({ track: title, artist, duration: String(Math.round(duration)) });
+    const r = await fetch(`https://lyrics-api.binimum.org/?${q}`, { signal: AbortSignal.timeout(5000) });
+    if (!r.ok) return null;
+    const j = (await r.json()) as { results?: { lyricsUrl?: string; duration?: number }[] };
+    const hit = j.results?.[0];
+    if (!hit?.lyricsUrl) return null;
+    if (hit.duration && Math.abs(hit.duration - duration) > 6) return null;
+    const docRes = await fetch(hit.lyricsUrl, { signal: AbortSignal.timeout(5000) });
+    if (!docRes.ok) return null;
+    const ttml = await docRes.text();
+    const lines = parseTtml(ttml);
+    if (!lines.length) return null;
+    return { synced: lines, plain: null, instrumental: false };
+  } catch {
+    return null;
+  }
+}
+
+/** Lyrics from BiniLyrics (word-synced Apple TTML), falling back to LRCLIB, then lyrics.ovh:
+ *  1. BiniLyrics (Apple Music word/syllable-level TTML)
+ *  2. LRCLIB: title + artist search, exact signature, free-text search, title only.
+ *  3. lyrics.ovh: plain text fallback. */
 export function getLyrics(t: Track): Promise<Lyrics | null> {
   return once(`lyrics:${t.id}`, async () => {
     const title = cleanTitle(t.title);
     const artist = firstArtist(t.artist);
+
+    // 1. Try BiniLyrics for Apple Music word/syllable TTML
+    const bini = await fetchBiniLyrics(title, artist, t.duration);
+    if (bini?.synced?.length) return bini;
     const tries: [() => Promise<LrcRow[]>, boolean][] = [
       [() => lrclib("search", { track_name: title, artist_name: artist }), false],
       [() => lrclib("get", { track_name: title, artist_name: artist, album_name: cleanTitle(t.album), duration: String(Math.round(t.duration)) }), false],

@@ -6,6 +6,7 @@ import { Icon, type IconName } from "@/components/Icon";
 import { toast } from "@/components/Swipe";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { cleanKey, looksLikeKey, testKey } from "@/lib/youtube";
+import { testListenBrainz } from "@/lib/scrobble";
 import { useLibrary } from "@/lib/library";
 import { usePlayer } from "@/lib/store";
 import { PageHeader } from "@/components/ui";
@@ -64,7 +65,7 @@ function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) =
   );
 }
 
-type SectionId = "youtube" | "playback" | "content" | "appearance" | "storage" | "data" | "about";
+type SectionId = "youtube" | "playback" | "content" | "appearance" | "connections" | "storage" | "data" | "about";
 
 // The Settings home list. `words` is what the search box matches (every option inside the section).
 const SECTIONS: { id: SectionId; title: string; hint: string; icon: IconName; words: string }[] = [
@@ -72,6 +73,7 @@ const SECTIONS: { id: SectionId; title: string; hint: string; icon: IconName; wo
   { id: "playback", title: "Playback", hint: "Autoplay, queue, crossfade, loudness, equalizer", icon: "playSoft", words: "autoplay repeat swipe play next queue history crossfade equalizer sound bass loudness volume level normalize normalise" },
   { id: "content", title: "Content", hint: "Region, explicit songs, what Home shows", icon: "grid", words: "country region explicit home sections featured artists made for you study sleep recently played top songs charts genre mixes hide" },
   { id: "appearance", title: "Appearance", hint: "Theme, colour, motion, lyrics", icon: "pencil", words: "theme dark light system editorial accent colour color motion animation blur lyrics synced status bar english letters romanize transliterate telugu tamil hindi" },
+  { id: "connections", title: "Connections", hint: "ListenBrainz scrobbling, Spotify playlist import", icon: "share", words: "listenbrainz scrobble scrobbling last.fm lastfm stats spotify import playlist connect token client id secret" },
   { id: "storage", title: "Storage", hint: "Cache, history, reset", icon: "device", words: "cache clear storage space history recently played playing next reset erase library downloads" },
   { id: "data", title: "Your data", hint: "Replay, backup and restore", icon: "clock", words: "replay top songs artists stats backup restore export import" },
   { id: "about", title: "About", hint: "Mimo · free music app", icon: "info", words: "about version catalog" },
@@ -290,6 +292,19 @@ function SectionBody({ id }: { id: SectionId }) {
             </Row>
           )}
         </Group>
+      </>
+    );
+
+  if (id === "connections")
+    return (
+      <>
+        <Group title="ListenBrainz scrobbling">
+          <ListenBrainzSetup />
+        </Group>
+        <Group title="Spotify playlist import">
+          <SpotifySetup />
+        </Group>
+        <SaveBar />
       </>
     );
 
@@ -520,6 +535,102 @@ function KeySetup() {
           {status.text ?? "Free. Stays on this device. About 100 new songs a day; songs you've played before don't count again."}
         </p>
       </div>
+    </div>
+  );
+}
+
+/** A masked text field for a token (type="text" + CSS dots: password fields make browsers auto-fill passwords). */
+function SecretField({ id, label, value, onChange, placeholder }: { id: string; label: string; value: string; onChange: (v: string) => void; placeholder: string }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div>
+      <label htmlFor={id} className="mb-1.5 block text-[15px]">
+        {label}
+      </label>
+      <div className="flex gap-2">
+        <input
+          id={id}
+          type="text"
+          autoComplete="off"
+          autoCapitalize="off"
+          autoCorrect="off"
+          data-1p-ignore
+          data-lpignore="true"
+          spellCheck={false}
+          value={value}
+          onChange={(e) => onChange(e.target.value.trim())}
+          style={show ? undefined : ({ WebkitTextSecurity: "disc" } as React.CSSProperties)}
+          placeholder={placeholder}
+          className="min-w-0 flex-1 rounded-xl border-2 border-[var(--line)] bg-paper px-3 py-2 font-mono text-sm outline-none focus:border-accent"
+        />
+        {value && (
+          <button type="button" onClick={() => setShow(!show)} className="label-cond rounded-xl border-2 border-[var(--line)] px-3 text-[15px] text-ink/70">
+            {show ? "Hide" : "Show"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** ListenBrainz: paste the user token, test it. */
+function ListenBrainzSetup() {
+  const token = useLibrary((s) => s.settings.listenBrainzToken);
+  const setSettings = useLibrary((s) => s.setSettings);
+  const [status, setStatus] = useState<{ kind: "idle" | "testing" | "ok" | "bad"; text?: string }>({ kind: "idle" });
+  return (
+    <div className="space-y-3 px-4 py-4">
+      <p className="text-sm text-ink/70">
+        Free, open listening stats. Copy your user token from{" "}
+        <a href="https://listenbrainz.org/settings/" target="_blank" rel="noreferrer" className="underline decoration-ink/20 underline-offset-4">
+          listenbrainz.org/settings ↗
+        </a>
+        . A song is sent after you&apos;ve heard half of it (or 4 minutes).
+      </p>
+      <div className="flex items-end gap-2">
+        <div className="min-w-0 flex-1">
+          <SecretField id="lbtoken" label="User token" value={token} onChange={(v) => (setSettings({ listenBrainzToken: v }), setStatus({ kind: "idle" }))} placeholder="xxxxxxxx-xxxx-…" />
+        </div>
+        <button
+          onClick={async () => {
+            setStatus({ kind: "testing" });
+            const r = await testListenBrainz(token);
+            setStatus({ kind: r.ok ? "ok" : "bad", text: r.text });
+          }}
+          disabled={!token || status.kind === "testing"}
+          className="brut brut-press label-cond h-[42px] rounded-xl bg-accent px-4 text-[16px] text-paper disabled:opacity-40"
+        >
+          {status.kind === "testing" ? "Testing…" : "Test"}
+        </button>
+      </div>
+      <p role="status" aria-live="polite" className={`text-xs ${status.kind === "ok" ? "text-note" : status.kind === "bad" ? "text-accent" : "text-ink/40"}`}>
+        {status.text ?? (token ? "Scrobbling is on." : "Off until you add a token. It stays on this device and is never in a backup.")}
+      </p>
+    </div>
+  );
+}
+
+/** Spotify: Client ID + secret of the user's own free developer app (needed by Spotify's official API). */
+function SpotifySetup() {
+  const id = useLibrary((s) => s.settings.spotifyId);
+  const secret = useLibrary((s) => s.settings.spotifySecret);
+  const setSettings = useLibrary((s) => s.setSettings);
+  return (
+    <div className="space-y-3 px-4 py-4">
+      <ol className="list-decimal space-y-1.5 pl-5 text-sm text-ink/70">
+        <li>
+          Open{" "}
+          <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noreferrer" className="underline decoration-ink/20 underline-offset-4">
+            developer.spotify.com/dashboard ↗
+          </a>{" "}
+          and Create app (any name; Redirect URI: http://127.0.0.1:8888/callback; tick Web API).
+        </li>
+        <li>In the app&apos;s Settings, copy the Client ID and View client secret.</li>
+        <li>Paste both below, then use Library → Import on any public playlist.</li>
+      </ol>
+      <SecretField id="spid" label="Client ID" value={id} onChange={(v) => setSettings({ spotifyId: v })} placeholder="32 letters and numbers" />
+      <SecretField id="spsecret" label="Client secret" value={secret} onChange={(v) => setSettings({ spotifySecret: v })} placeholder="32 letters and numbers" />
+      <p className="text-xs text-ink/40">Stays on this device and is never in a backup. Spotify may require the developer account to have Premium.</p>
     </div>
   );
 }

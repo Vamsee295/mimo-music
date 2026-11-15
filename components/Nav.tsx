@@ -14,10 +14,10 @@ const main: Item[] = [
   ["/search", "Search", "search"],
   ["/", "Home", "home"],
   ["/new", "New", "grid"],
+  ["/party", "Party", "radio"], // Listen Together (same as the phone tab)
 ];
 const library: Item[] = [
   ["/library?tab=library", "Library", "library"],
-  ["/library?tab=device", "Your Music", "device"],
   ["/library?tab=recent", "Recently Played", "clock"],
   ["/liked", "Liked Songs", "heart"],
   ["/library?tab=study", "Study Lofi", "note"],
@@ -29,6 +29,7 @@ const tabs: Item[] = [
   ["/new", "New", "grid"],
   ["/library", "Library", "library"],
   ["/search", "Search", "search"],
+  ["/party", "Party", "radio"], // Listen Together: one tap to start or join
 ];
 
 function useActive() {
@@ -302,7 +303,7 @@ export function Avatar({ name, big }: { name: string; big?: boolean }) {
 export function TabBar() {
   const active = useActive();
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 [view-transition-name:tabbar] grid grid-cols-4 border-t-[2.4px] border-[var(--line)] bg-paper/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-40 [view-transition-name:tabbar] grid grid-cols-5 border-t-[2.4px] border-[var(--line)] bg-paper/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden">
       {tabs.map(([href, label, icon]) => (
         <Link
           key={href}

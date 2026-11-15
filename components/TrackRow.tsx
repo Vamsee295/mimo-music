@@ -9,6 +9,7 @@ import { Explicit } from "./ui";
 import { Swipe, toast } from "./Swipe";
 import { LibraryPicker } from "./AddToLibrary";
 import { canDownload, download, removeDownload, useDownloading } from "@/lib/downloads";
+import { requestSong, useParty } from "@/lib/party";
 
 export const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
@@ -20,6 +21,7 @@ export function TrackMenu({ track, onRemove, removeLabel = "Remove from Playlist
   const saved = useLibrary((s) => s.songs.some((t) => t.id === track.id));
   const isDownloaded = useLibrary((s) => s.downloads.some((t) => t.id === track.id));
   const downloading = useDownloading(track.id);
+  const guest = useParty((p) => p.status === "live" && p.role === "guest");
   const close = () => setOpen(false);
   const act = (fn: () => void) => () => (fn(), close());
   const item = "flex w-full items-center gap-3 px-4 py-3 text-left font-medium hover:bg-accent hover:text-paper md:py-2";
@@ -61,6 +63,12 @@ export function TrackMenu({ track, onRemove, removeLabel = "Remove from Playlist
                   <Icon name={saved ? "check" : "plus"} className="size-4 text-[var(--accent)]" />
                   {saved ? "In Library" : "Add to Library"} <Icon name="right" className="ml-auto size-4" />
                 </button>
+                {guest && (
+                  <button className={item} onClick={act(() => requestSong(track) && toast(`Sent “${track.title}” to the host`))}>
+                    <Icon name="radio" className="size-4 text-[var(--accent)]" />
+                    Send to party
+                  </button>
+                )}
                 <button className={item} onClick={act(() => useLibrary.getState().toggleLike(track))}>
                   <Icon name={liked ? "heart" : "heartOutline"} className="size-4 text-[var(--accent)]" />
                   {liked ? "Unlove" : "Love"}

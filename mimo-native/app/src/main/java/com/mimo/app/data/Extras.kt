@@ -11,7 +11,8 @@ import java.util.concurrent.ConcurrentHashMap
 
 // Now Playing extras: lyrics (LRCLIB, then lyrics.ovh) and artist bio (Wikipedia). Port of lib/extras.ts.
 
-data class LyricLine(val t: Double, val text: String)
+data class LyricSpan(val t: Double, val end: Double, val text: String)
+data class LyricLine(val t: Double, val text: String, val spans: List<LyricSpan>? = null)
 data class Lyrics(val synced: List<LyricLine>?, val plain: String?, val instrumental: Boolean)
 data class Bio(val title: String, val extract: String, val image: String?, val url: String)
 
@@ -26,6 +27,37 @@ data class LrcRow(
 )
 
 private fun firstArtist(s: String) = s.split(Regex(""",|&| x | feat\.? """, RegexOption.IGNORE_CASE))[0].trim()
+
+/** "00:01:23.45" or "01:23.45" or "83.45" -> 83.45 */
+fun parseTime(s: String): Double {
+    if (s.isEmpty()) return 0.0
+    val parts = s.trim().split(":")
+    return when (parts.size) {
+        3 -> parts[0].toDoubleOrNull()?.times(3600)?.plus((parts[1].toDoubleOrNull() ?: 0.0) * 60)?.plus(parts[2].toDoubleOrNull() ?: 0.0) ?: 0.0
+        2 -> parts[0].toDoubleOrNull()?.times(60)?.plus(parts[1].toDoubleOrNull() ?: 0.0) ?: 0.0
+        else -> s.toDoubleOrNull() ?: 0.0
+    }
+}
+
+/** Apple Music TTML parser: <p begin="..." end="..."> <span begin="..." end="...">word</span> </p> */
+fun parseTtml(ttml: String): List<LyricLine> {
+    val pRegex = Regex("""<p\b[^>]*begin="([^"]+)"[^>]*end="([^"]+)"[^>]*>([\s\S]*?)</p>""", RegexOption.IGNORE_CASE)
+    val spanRegex = Regex("""<span\b[^>]*begin="([^"]+)"[^>]*end="([^"]+)"[^>]*>([\s\S]*?)</span>""", RegexOption.IGNORE_CASE)
+    val clean = { str: String -> str.replace(Regex("<[^>]+>"), "").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"") }
+    return pRegex.findAll(ttml).mapNotNull { pMatch ->
+        val beginStr = pMatch.groupValues[1]
+        val pBody = pMatch.groupValues[3]
+        val t = parseTime(beginStr)
+        val spans = spanRegex.findAll(pBody).map { sMatch ->
+            val sBegin = parseTime(sMatch.groupValues[1])
+            val sEnd = parseTime(sMatch.groupValues[2])
+            val sText = clean(sMatch.groupValues[3])
+            LyricSpan(sBegin, sEnd, sText)
+        }.toList()
+        val text = clean(if (spans.isNotEmpty()) spans.joinToString("") { it.text } else pBody).trim()
+        if (text.isNotEmpty()) LyricLine(t, text, spans.ifEmpty { null }) else null
+    }.sortedBy { it.t }.toList()
+}
 
 /** "[01:23.45] line" → LyricLine(83.45, "line"), sorted by time. */
 fun parseLrc(lrc: String): List<LyricLine> = lrc.lines().mapNotNull { row ->
@@ -60,12 +92,36 @@ class Extras {
         if (e.status == 404) emptyList() else throw e
     }
 
-    /** LRCLIB, trying looser lookups until one has them: title + artist search, exact signature,
-     *  free text, title only (same length only). Then lyrics.ovh for plain text. Throws only when offline. */
+    private suspend fun biniLyrics(title: String, artist: String, duration: Double): Lyrics? = try {
+        val q = "track=${enc(title)}&artist=${enc(artist)}&duration=${Math.round(duration)}"
+        val body = httpGet("https://lyrics-api.binimum.org/?$q", 5000)
+        val j = json.parseToJsonElement(body).jsonObject
+        val results = j["results"]?.jsonArray
+        val hit = results?.firstOrNull()?.jsonObject
+        val url = hit?.get("lyricsUrl")?.jsonPrimitive?.contentOrNull
+        val hitDur = hit?.get("duration")?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()
+        if (url != null && (hitDur == null || Math.abs(hitDur - duration) <= 6)) {
+            val ttml = httpGet(url, 5000)
+            val lines = parseTtml(ttml)
+            if (lines.isNotEmpty()) Lyrics(lines, null, false) else null
+        } else null
+    } catch (e: Exception) {
+        null
+    }
+
+    /** Lyrics from BiniLyrics (word-synced Apple TTML), falling back to LRCLIB, then lyrics.ovh. Throws only when offline. */
     suspend fun getLyrics(t: Track): Lyrics? {
         if (lyrics.containsKey(t.id)) return lyrics[t.id]
         val title = cleanTitle(t.title)
         val artist = firstArtist(t.artist)
+
+        // 1. Try BiniLyrics for Apple Music word/syllable TTML
+        val bini = biniLyrics(title, artist, t.duration)
+        if (bini?.synced != null) {
+            lyrics[t.id] = bini
+            return bini
+        }
+
         val tries = listOf<Pair<suspend () -> List<LrcRow>, Boolean>>(
             suspend { lrclib("search", listOf("track_name" to title, "artist_name" to artist)) } to false,
             suspend { lrclib("get", listOf("track_name" to title, "artist_name" to artist, "album_name" to cleanTitle(t.album), "duration" to Math.round(t.duration).toString())) } to false,

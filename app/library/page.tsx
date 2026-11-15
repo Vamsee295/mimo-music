@@ -10,13 +10,14 @@ import { LibraryGrid } from "@/components/LibraryGrid";
 import { PageHeader, PlayShuffle } from "@/components/ui";
 import { MoodPage } from "@/components/MoodPage";
 import { canDownload, removeDownload } from "@/lib/downloads";
+import { SpotifyImport } from "@/components/SpotifyImport";
+import { useState } from "react";
 
 const TABS = [
   ["library", "Library"],
   ["study", "Study Lofi"],
   ["sleep", "Sleep Sounds"],
   ["downloads", "Downloads"],
-  ["device", "Your Music"],
   ["recent", "Recently Played"],
   ["songs", "Liked Songs"],
   ["artists", "Artists"],
@@ -25,9 +26,11 @@ const TABS = [
 const Empty = ({ children }: { children: React.ReactNode }) => <p className="py-16 text-center text-ink/40">{children}</p>;
 
 export default function LibraryPage() {
-  const tab = useSearchParams().get("tab") ?? "library";
+  const raw = useSearchParams().get("tab") ?? "library";
+  const tab = raw === "device" ? "library" : raw; // "Your Music" is part of the Library tab now (old links land there)
   const lib = useLibrary();
   const router = useRouter();
+  const [importing, setImporting] = useState(false);
 
   // Spotify-style "+ Create": make it right away, then land on it to add songs and set Name & details
   const create = () => {
@@ -44,6 +47,13 @@ export default function LibraryPage() {
   return (
     <>
       <PageHeader title="Your" hl="Library" eyebrow="Saved on this device">
+        <button
+          onClick={() => setImporting(true)}
+          className="brut label-cond flex h-11 items-center gap-2 rounded-full bg-card px-5 text-[16px]"
+        >
+          <Icon name="upload" className="size-5" />
+          Import
+        </button>
         <button
           onClick={create}
           className="brut label-cond flex h-11 items-center gap-2 rounded-full bg-accent px-5 text-[16px] text-paper"
@@ -62,9 +72,18 @@ export default function LibraryPage() {
             {label}
           </Link>
         ))}
+        <Link href="/party" className="label-cond flex shrink-0 items-center gap-1.5 rounded-full border-2 border-[var(--line)] px-4 py-1.5 text-[15px] text-ink/70 hover:bg-ink/[0.06]">
+          <Icon name="radio" className="size-4 text-[var(--accent)]" />
+          Listen Together
+        </Link>
       </div>
 
-      {tab === "library" && <LibraryGrid />}
+      {tab === "library" && (
+        <>
+          <LibraryGrid />
+          <YourMusic />
+        </>
+      )}
 
       {tab === "downloads" &&
         (lib.downloads.length ? (
@@ -80,7 +99,6 @@ export default function LibraryPage() {
         ))}
       {(tab === "study" || tab === "sleep") && <MoodPage key={tab} id={tab} />}
 
-      {tab === "device" && <YourMusic />}
 
       {tab === "recent" &&
         (lib.history.length ? <TrackList tracks={lib.history} /> : <Empty>Songs you play show up here.</Empty>)}
@@ -113,6 +131,7 @@ export default function LibraryPage() {
           <Empty>Artists you listen to show up here.</Empty>
         ))}
 
+      {importing && <SpotifyImport onClose={() => setImporting(false)} />}
     </>
   );
 }

@@ -37,6 +37,9 @@ export type Settings = {
   autoplay: boolean; // keep playing similar songs when the queue ends
   dataSaver: boolean; // keep the YouTube player small → YouTube streams low-res video (less data)
   ytKey: string; // user's own YouTube Data API key (falls back to NEXT_PUBLIC_YT_KEY)
+  listenBrainzToken: string; // Settings → Connections; empty = no scrobbling
+  spotifyId: string; // Spotify app credentials, for importing playlists (Settings → Connections)
+  spotifySecret: string;
   crossfade: number; // seconds of fade between native songs (Android); 0 = off
   themeSystem: boolean; // follow the phone's light / dark setting (it then sets `theme`)
   reduceBlur: boolean; // solid fills instead of frosted glass, no lyric blur
@@ -124,7 +127,7 @@ const initial: State = {
   playLog: [],
   playMeta: {},
   taste: { songs: {}, artists: {} },
-  settings: { theme: "editorial", country: "in", accent: "#c8603a", explicit: true, reduceMotion: false, autoplay: true, dataSaver: true, ytKey: "", crossfade: 0, themeSystem: false, reduceBlur: false, syncedLyrics: true, blurLyrics: true, swipePlayNext: false, noRepeatAutoplay: false, hideStatusBar: false, queueHistory: true, loudness: false, homeFeatured: true, homeMadeForYou: true, homeMoods: true, homeRecent: true, homeCharts: true, homeGenres: true, sidebarWidth: 240, sidebarCollapsed: false },
+  settings: { theme: "editorial", country: "in", accent: "#c8603a", explicit: true, reduceMotion: false, autoplay: true, dataSaver: true, ytKey: "", listenBrainzToken: "", spotifyId: "", spotifySecret: "", crossfade: 0, themeSystem: false, reduceBlur: false, syncedLyrics: true, blurLyrics: true, swipePlayNext: false, noRepeatAutoplay: false, hideStatusBar: false, queueHistory: true, loudness: false, homeFeatured: true, homeMadeForYou: true, homeMoods: true, homeRecent: true, homeCharts: true, homeGenres: true, sidebarWidth: 240, sidebarCollapsed: false },
 };
 
 const logHistory = (s: State, t: Track) => ({

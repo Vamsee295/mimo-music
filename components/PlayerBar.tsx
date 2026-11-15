@@ -13,12 +13,15 @@ import { Swipe, toast } from "./Swipe";
 import { btnPrimary, btnSecondary } from "./ui";
 import { hasIndic, romanize } from "@/lib/romanize";
 import { cleanTitle, getBio, getLyrics } from "@/lib/extras";
+import { listenAfter, scrobble } from "@/lib/scrobble";
+import { bindPlayer, broadcastNow, isGuest, partyVideo, resumeParty, useParty } from "@/lib/party";
+import { useShallow } from "zustand/react/shallow";
 import { useData } from "@/lib/useData";
 import { BACK_EVENT, engine, nativeLocalCopy, nativeMedia, offlineStream, setStatusBarHidden, type Stream } from "@/lib/native";
 import { isBackground, useForeground } from "@/lib/appState";
 import { rankPicks } from "@/lib/taste";
 import { director, radioAfter } from "@/lib/radio";
-import { useArtColor } from "@/lib/artColor";
+import { useArtColor, useArtMesh } from "@/lib/artColor";
 
 type Seek = { time: number; dur: number; seek: (t: number) => void };
 
@@ -109,8 +112,13 @@ export function PlayerBar() {
   const [panel, setPanel] = useState<"none" | "queue" | "full">("none");
   const ytHost = useRef<HTMLDivElement>(null);
   const ytMount = useRef<HTMLDivElement>(null); // the iframe goes in here, under the album-art cover
-  const yt = useRef<YT.Player | null>(null);
+  const yt = useRef<YT.Player | null>(null); // the player you hear
   const ytReady = useRef<Promise<YT.Player> | null>(null);
+  // Gapless: a second hidden player buffers the next song (muted, paused at 0) in the last seconds of this one;
+  // when the song changes they swap, so the next one starts at once instead of loading for 1–2 s.
+  const standby = useRef<YT.Player | null>(null);
+  const standbyReady = useRef<Promise<YT.Player> | null>(null);
+  const pre = useRef<{ trackId: string; id: string; ready: boolean } | null>(null);
   const [slot, setSlot] = useState<HTMLElement | null>(null); // the player's spot on the art in Now Playing
   const onScreen = useForeground(); // false while the Android app is in the background / screen off
 
@@ -125,11 +133,26 @@ export function PlayerBar() {
     window.addEventListener(BACK_EVENT, onBack);
     return () => window.removeEventListener(BACK_EVENT, onBack);
   }, [panel]);
+  // back into the party you were in before a reload / the app restarting (lib/party.ts)
+  useEffect(() => {
+    resumeParty();
+  }, []);
+  // "Open player & lyrics" on the party page (components/PartyMusic.tsx)
+  useEffect(() => {
+    const open = () => setPanel("full");
+    window.addEventListener("mimo:open-player", open);
+    return () => window.removeEventListener("mimo:open-player", open);
+  }, []);
   // yt = YouTube video id (official player) · url = Your Music file in the page's <audio> · stream = a downloaded
   // song in Android's native engine · none = no full version → why + what to do (skip this song / stop)
   const [src, setSrc] = useState<{ key: string; yt?: string; url?: string; stream?: Stream; why?: string; fail?: "skip" | "stop" }>();
   // on Settings the banner would cover the key field it points to
   const onSettings = usePathname() === "/settings";
+  // the banner's ✕: hides that message (a different message, e.g. a new problem, still shows)
+  const [dismissed, setDismissed] = useState("");
+  // shallow: a fresh object every render would re-render forever (zustand v5)
+  const party = useParty(useShallow((p) => ({ live: p.status === "live", code: p.code, n: p.members.length, host: p.role === "host", asks: p.requests.length })));
+  const onParty = usePathname() === "/party";
   const s = usePlayer();
   const cur = s.queue[s.index];
   // keyed on the play counter, not the queue position: queueing, removing or dragging other songs shifts
@@ -144,16 +167,14 @@ export function PlayerBar() {
   const resumeAt = useRef({ key: "", t: 0 });
   const reopened = useRef(false); // the first song after opening the app has been loaded
   // seconds of this play actually heard (play counting, Replay minutes, and what Autoplay learns)
-  const heardRef = useRef<{ key: string; sec: number; logged: boolean; extra: number; track?: Track }>({ key: "", sec: 0, logged: false, extra: 0 });
+  const heardRef = useRef<{ key: string; sec: number; logged: boolean; extra: number; track?: Track; scrobbled?: boolean }>({ key: "", sec: 0, logged: false, extra: 0 });
   const mode: Mode = !cur ? "audio" : src?.key === curKey ? (src.yt ? "yt" : "audio") : "finding";
   // the stream the native engine is playing for the current song (Android), and its clock (from "time" events)
   const stream = src?.key === curKey ? src.stream : undefined;
   const nativeTime = useRef(0);
   const streamKey = useRef("");
 
-  const ensurePlayer = () =>
-    (ytReady.current ??= loadYT().then(
-      (api) =>
+  const makePlayer = (api: typeof YT) =>
         new Promise<YT.Player>((resolve) => {
           const el = document.createElement("div");
           ytMount.current!.appendChild(el);
@@ -164,12 +185,16 @@ export function PlayerBar() {
             // The player is small (200px), so YouTube streams a low-res picture: little data, light decoding.
             playerVars: { playsinline: 1, rel: 0, origin: location.origin } as YT.PlayerVars,
             events: {
-              onReady: () => {
-                yt.current = p;
-                p.setVolume(Math.round(usePlayer.getState().volume * 100));
-                resolve(p);
-              },
+              onReady: () => resolve(p),
               onStateChange: (e) => {
+                if (p !== yt.current) {
+                  // the standby player: once the next song is buffered and playing (muted), hold it at the start
+                  if (e.data === api.PlayerState.PLAYING && pre.current && !pre.current.ready) {
+                    p.pauseVideo();
+                    pre.current.ready = true;
+                  }
+                  return;
+                }
                 const st = usePlayer.getState();
                 if (e.data === api.PlayerState.ENDED) {
                   // "End of this song" sleep timer beats Repeat One
@@ -192,6 +217,7 @@ export function PlayerBar() {
               },
               // 100 = removed, 101/150 = the owner blocks playback outside YouTube → remember, skip
               onError: () => {
+                if (p !== yt.current) return void (pre.current = null); // couldn't buffer the next song: it loads normally
                 const st = usePlayer.getState();
                 const t = st.queue[st.index];
                 if (t) forgetVideo(t.id);
@@ -199,8 +225,21 @@ export function PlayerBar() {
               },
             },
           });
-        }),
-    ));
+        });
+  const ensurePlayer = () =>
+    (ytReady.current ??= loadYT().then(async (api) => {
+      const p = await makePlayer(api);
+      yt.current = p;
+      p.setVolume(Math.round(usePlayer.getState().volume * 100));
+      return p;
+    }));
+  const ensureStandby = () =>
+    (standbyReady.current ??= ensurePlayer().then(async () => {
+      const p = await makePlayer(await loadYT());
+      p.mute();
+      standby.current = p;
+      return p;
+    }));
 
   // 1. pick a full-length source: Your Music file, a download, else the song on YouTube. Never the 30s preview.
   useEffect(() => {
@@ -222,6 +261,8 @@ export function PlayerBar() {
         if (off) return { stream: off };
         useLibrary.getState().setDownloaded(cur, false);
       }
+      const pv = partyVideo(cur.id); // in a party as a guest: the host's exact video, no key needed
+      if (pv) return { yt: pv };
       const k = ytKey();
       if (!k) return { why: "Add your free YouTube key in Settings to play full songs.", fail: "stop" };
       for (const pause of [0, 2000, 6000]) {
@@ -267,6 +308,23 @@ export function PlayerBar() {
       a.removeAttribute("src");
       engine.unload();
       const id = src.yt;
+      const sb = standby.current;
+      if (sb && pre.current?.id === id && at === 0) {
+        // gapless: the next song is already buffered in the standby player → swap them, no loading gap
+        const old = yt.current;
+        yt.current = sb;
+        standby.current = old;
+        pre.current = null;
+        loaded.current = { key: curKey, at: Date.now() };
+        sb.setVolume(Math.round(usePlayer.getState().volume * 100));
+        sb.unMute();
+        sb.seekTo(0, true);
+        if (usePlayer.getState().playing) sb.playVideo();
+        else sb.pauseVideo();
+        old?.mute();
+        old?.stopVideo();
+        return;
+      }
       ensurePlayer().then((p) => {
         if (keyRef.current !== curKey) return;
         loaded.current = { key: curKey, at: Date.now() };
@@ -341,17 +399,32 @@ export function PlayerBar() {
     return () => clearInterval(id);
   }, [mode, onScreen]);
 
-  // sleep timer: pause when the chosen time is up
+  // sleep timer: the music fades out over the last 15 s, then pauses (a sudden cut can wake you up)
   useEffect(() => {
     if (!s.sleepAt) return;
+    const FADE = 15_000;
+    let fading = false;
+    const level = (k: number) => {
+      const v = usePlayer.getState().volume * k;
+      yt.current?.setVolume(Math.round(v * 100));
+      if (audio.current) audio.current.volume = v;
+    };
     const id = setInterval(() => {
       const st = usePlayer.getState();
-      if (st.sleepAt && Date.now() >= st.sleepAt) {
+      if (!st.sleepAt) return;
+      const left = st.sleepAt - Date.now();
+      if (left <= 0) {
         st.setPlaying(false);
         st.setSleep(null);
+      } else if (left <= FADE && st.playing) {
+        fading = true;
+        level((left / FADE) ** 2); // eases out: most of the drop at the end
       }
-    }, 1000);
-    return () => clearInterval(id);
+    }, 250);
+    return () => {
+      clearInterval(id);
+      if (fading) setTimeout(() => level(1), 400); // back to normal for next time (after the pause lands)
+    };
   }, [s.sleepAt]);
 
   // monthly listening time: count only seconds where sound is really coming out (not buffering/finding).
@@ -388,6 +461,12 @@ export function PlayerBar() {
           h.logged = true;
           useLibrary.getState().logPlay(cur, h.sec); // the seconds heard so far; the rest is added as it plays
         }
+        // ListenBrainz (Settings → Connections): once per play, after half the song or 4 minutes
+        const lb = useLibrary.getState().settings.listenBrainzToken;
+        if (lb && !h.scrobbled && h.sec >= listenAfter(cur.duration)) {
+          h.scrobbled = true;
+          scrobble(lb, cur, Date.now() - h.sec * 1000);
+        }
       }
       if (pending >= (isBackground() ? 60 : 10)) flush(); // screen off: save less often, leave the CPU to the audio
     }, 1000);
@@ -415,7 +494,7 @@ export function PlayerBar() {
   const autoplay = useLibrary((st) => st.settings.autoplay);
   useEffect(() => {
     const st = usePlayer.getState();
-    if (autoplay && cur && !isLocal(cur) && st.index === st.queue.length - 1) lineUp(cur);
+    if (autoplay && cur && !isLocal(cur) && st.index === st.queue.length - 1 && !isGuest()) lineUp(cur);
   }, [cur, s.index, s.queue.length, autoplay]);
 
   // Look the next song up while this one plays: the change-over is then instant and doesn't depend on a
@@ -455,6 +534,35 @@ export function PlayerBar() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ahead, s.playing, gapless, stream?.key]);
+
+  // Gapless for YouTube songs: in the last 15 s, buffer the next song in the standby player (muted). Skipped for
+  // Repeat One and "end of this song" sleep (no next song), and for Your Music / downloads (the native engine).
+  const nextIsYt = !!upNext && !isLocal(upNext);
+  useEffect(() => {
+    if (mode !== "yt" || !s.playing || !nextIsYt || !gapless) return;
+    const id = setInterval(async () => {
+      const p = yt.current;
+      const st = usePlayer.getState();
+      const next = st.queue[st.index + 1];
+      const k = ytKey();
+      if (!p?.getDuration || !next || !k || pre.current?.trackId === next.id) return;
+      const d = p.getDuration() || 0;
+      if (!d || d - (p.getCurrentTime() || 0) > 15) return;
+      pre.current = { trackId: next.id, id: "", ready: false }; // claimed: one buffering at a time
+      try {
+        const vid = await findVideo(next, k); // already looked up ahead (cached), so this is instant
+        if (!vid || pre.current?.trackId !== next.id) return void (pre.current = null);
+        const sb = await ensureStandby();
+        pre.current = { trackId: next.id, id: vid, ready: false };
+        sb.mute();
+        sb.loadVideoById({ videoId: vid, startSeconds: 0 });
+      } catch {
+        pre.current = null; // it just loads the normal way at the change-over
+      }
+    }, 1000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, s.playing, nextIsYt, gapless, curKey]);
 
   // Repeat One for native songs loops inside the native engine ("End of this song" sleep beats it)
   useEffect(() => {
@@ -519,8 +627,12 @@ export function PlayerBar() {
       engine.seek(t);
     } else if (audio.current) audio.current.currentTime = t;
     setTime(t);
+    setTimeout(broadcastNow, 150); // Listen Together: everyone jumps with the host
   };
   const prev = () => (position() > 3 ? seek(0) : s.prev());
+  useEffect(() => {
+    bindPlayer({ pos: position, seek: (t) => (mode === "yt" ? yt.current?.seekTo(t, true) : seek(t)), video: () => (src?.key === curKey ? src.yt : undefined) });
+  });
 
   // Where the song was: saved every few seconds while playing (and when the app is left), so after Android
   // closes the app — or you do — reopening carries on from the same second instead of the start.
@@ -724,7 +836,7 @@ export function PlayerBar() {
           hidden ? "pointer-events-none left-0 top-0 -z-50 size-[205px] opacity-0" : "z-[60]"
         }`}
       >
-        <div ref={ytMount} className="size-full [&>iframe]:size-full" />
+        <div ref={ytMount} className="relative size-full [&>iframe]:absolute [&>iframe]:inset-0 [&>iframe]:size-full" />
         {cur && <img src={cur.art} alt="" className={`absolute inset-0 size-full object-cover ${hidden ? "pointer-events-none" : ""}`} />}
       </div>
 
@@ -742,8 +854,20 @@ export function PlayerBar() {
 
       {panel === "full" && cur && <NowPlaying cur={cur} sk={sk} prev={prev} mode={mode} why={src?.key === curKey ? src.why : undefined} setSlot={setSlot} onClose={() => setPanel("none")} />}
 
+      {/* in a party: a small pill at the top, back to the party page (requests waiting show on it) */}
+      {party.live && !onParty && panel !== "full" && (
+        <Link
+          href="/party"
+          className="brut label-cond fixed left-1/2 top-[max(0.6rem,env(safe-area-inset-top))] z-40 flex -translate-x-1/2 items-center gap-2 rounded-full bg-ink px-3.5 py-1.5 text-[13px] text-paper"
+        >
+          <span className="size-2 animate-pulse rounded-full bg-accent" />
+          Party {party.code} · {party.n}
+          {party.host && party.asks > 0 && <span className="rounded-full bg-accent px-1.5 text-[11px]">{party.asks} new</span>}
+        </Link>
+      )}
+
       {/* why there's no full song (and what happens next) — visible without opening Now Playing */}
-      {cur && src?.key === curKey && src.why && !src.yt && !src.url && !src.stream && !onSettings && (
+      {cur && src?.key === curKey && src.why && src.why !== dismissed && !src.yt && !src.url && !src.stream && !onSettings && (
         <div
           role="status"
           className="mini-player brut fixed inset-x-2 bottom-[calc(9rem+env(safe-area-inset-bottom))] z-30 flex items-center gap-3 rounded-2xl bg-accent px-4 py-2.5 text-[13px] font-medium text-paper md:bottom-[100px] md:left-[calc(var(--sb,240px)+1rem)] md:right-auto md:max-w-xl"
@@ -755,6 +879,9 @@ export function PlayerBar() {
               Settings
             </Link>
           )}
+          <button onClick={() => setDismissed(src.why!)} aria-label="Dismiss" className="-mr-1.5 grid size-8 shrink-0 place-items-center rounded-full hover:bg-paper/15">
+            <Icon name="close" className="size-4" />
+          </button>
         </div>
       )}
 
@@ -1125,6 +1252,7 @@ function NowPlaying({
   const playing = s.playing;
   const liked = useLibrary((st) => st.liked.some((t) => t.id === cur.id));
   const tint = useArtColor(cur.art);
+  const mesh = useArtMesh(cur.art);
   const [tab, setTab] = useState<Tab>("lyrics");
   const [panelOpen, setPanelOpen] = useState(false); // phone: the panel takes the cover's place
   const [menu, setMenu] = useState(false);
@@ -1151,9 +1279,14 @@ function NowPlaying({
           // Mimo's Anton headline: the one brand touch on this dark screen
           <p className="display line-clamp-2 text-[32px] text-white [@media(max-height:720px)]:line-clamp-1 [@media(max-height:720px)]:text-[26px]">{title}</p>
         )}
-        <Link href={`/artist?id=${cur.artistId}`} onClick={onClose} className={`block truncate text-white/60 hover:underline ${small ? "text-[15px]" : "text-[19px]"}`}>
-          {cur.artist}
-        </Link>
+        {cur.artistId ? (
+          <Link href={`/artist?id=${cur.artistId}`} onClick={onClose} className={`block truncate text-white/60 hover:underline ${small ? "text-[15px]" : "text-[19px]"}`}>
+            {cur.artist}
+          </Link>
+        ) : (
+          // imported songs (Spotify) have no artist page in Apple's catalogue
+          <p className={`truncate text-white/60 ${small ? "text-[15px]" : "text-[19px]"}`}>{cur.artist}</p>
+        )}
       </div>
       {!small && (
         <button onClick={() => useLibrary.getState().toggleLike(cur)} aria-label={liked ? "Unlove" : "Love"} className={round}>
@@ -1172,8 +1305,8 @@ function NowPlaying({
       className={`np-enter theme-dark fixed inset-0 z-50 select-none overflow-clip bg-black text-white ${!panelOpen && !menu ? "max-md:touch-none" : ""}`}
       {...drag}
     >
-      {/* the cover's own colours, blurred, as the backdrop (Apple Music) */}
-      <img src={cur.art} alt="" className="absolute inset-0 size-full scale-150 object-cover opacity-70 blur-3xl" />
+      {/* the cover's own colours as a soft mesh (8×8 grid scaled up: no heavy blur for the phone to draw) */}
+      {mesh && <img src={mesh} alt="" className="absolute inset-0 size-full scale-110 object-cover opacity-80 transition-opacity duration-700" />}
       <div
         className="absolute inset-0 transition-[background] duration-700"
         style={{ background: tint ? `linear-gradient(180deg, rgb(${tint} / 0.45) 0%, rgb(0 0 0 / 0.35) 45%, rgb(0 0 0 / 0.7) 100%)` : "rgb(0 0 0 / 0.55)" }}
@@ -1188,7 +1321,11 @@ function NowPlaying({
         >
           <span className="h-1.5 w-10 rounded-full bg-white/40" />
         </button>
-        <Link href={`/album?id=${cur.albumId}`} onClick={onClose} className="mb-3 block truncate text-center hover:underline md:mb-6">
+        <Link
+          href={cur.albumId ? `/album?id=${cur.albumId}` : "#"}
+          onClick={(e) => (cur.albumId ? onClose() : e.preventDefault())}
+          className={`mb-3 block truncate text-center md:mb-6 ${cur.albumId ? "hover:underline" : "cursor-default"}`}
+        >
           <span className="block font-mono text-[10px] uppercase tracking-[0.14em] text-white/45">Playing from</span>
           <span className="text-[13px] font-medium text-white/80">{from}</span>
         </Link>
@@ -1451,6 +1588,13 @@ function SongMenu({ cur, onClose, closePlayer, showArtist }: { cur: Track; onClo
           </span>
         </button>
         {line}
+        <Link href="/party" onClick={() => (onClose(), closePlayer())} className={row}>
+          <Icon name="radio" className="size-6 shrink-0 text-white/80" />
+          <span className="min-w-0">
+            Listen together
+            <span className="block truncate text-[13px] text-white/50">Same song on friends&apos; phones, in sync</span>
+          </span>
+        </Link>
         {cur.albumId && (
           <Link href={`/album?id=${cur.albumId}`} onClick={() => (onClose(), closePlayer())} className={row}>
             <Icon name="library" className="size-6 shrink-0 text-white/80" />
@@ -1615,22 +1759,45 @@ function LyricsPanel({ cur, sk, synced }: { cur: Track; sk: Seek; synced: boolea
                 className="block w-full origin-left py-2.5 text-left transition-[opacity,filter,transform] duration-[600ms] ease-[cubic-bezier(0.25,1,0.5,1)] hover:!opacity-90 hover:![filter:none]"
               >
                 {l.text ? (
-                  <span
-                    className="text-[28px] font-extrabold leading-[1.18] tracking-tight md:text-[36px]"
-                    style={
-                      isNow
-                        ? {
-                            // the sung part is bright, the rest dim; moves left→right through the line
-                            backgroundImage: `linear-gradient(90deg, var(--ink) ${fill * 100}%, color-mix(in oklab, var(--ink) 38%, transparent) ${fill * 100 + 6}%)`,
-                            WebkitBackgroundClip: "text",
-                            backgroundClip: "text",
-                            color: "transparent",
-                          }
-                        : undefined
-                    }
-                  >
-                    {show(l.text)}
-                  </span>
+                  isNow && l.spans && l.spans.length > 0 ? (
+                    // Word-level karaoke: each span lights up as it's sung
+                    <span className="text-[28px] font-extrabold leading-[1.18] tracking-tight md:text-[36px]">
+                      {l.spans.map((sp, si) => {
+                        // sp.t is in seconds (same as l.t); t is seconds from useSmoothTime
+                        const sung = t >= sp.t;
+                        return (
+                          <span
+                            key={si}
+                            style={{
+                              color: sung
+                                ? "var(--ink)"
+                                : "color-mix(in oklab, var(--ink) 38%, transparent)",
+                              transition: "color 120ms linear",
+                            }}
+                          >
+                            {show(sp.text)}
+                          </span>
+                        );
+                      })}
+                    </span>
+                  ) : (
+                    <span
+                      className="text-[28px] font-extrabold leading-[1.18] tracking-tight md:text-[36px]"
+                      style={
+                        isNow
+                          ? {
+                              // the sung part is bright, the rest dim; moves left→right through the line
+                              backgroundImage: `linear-gradient(90deg, var(--ink) ${fill * 100}%, color-mix(in oklab, var(--ink) 38%, transparent) ${fill * 100 + 6}%)`,
+                              WebkitBackgroundClip: "text",
+                              backgroundClip: "text",
+                              color: "transparent",
+                            }
+                          : undefined
+                      }
+                    >
+                      {show(l.text)}
+                    </span>
+                  )
                 ) : (
                   // musical break: three breathing dots (Apple's "…" between verses)
                   <span className={`inline-flex gap-2 py-2 ${isNow ? "lyric-dots" : ""}`} aria-label="Instrumental break">
@@ -1702,9 +1869,11 @@ function ArtistPanel({ cur, onClose }: { cur: Track; onClose: () => void }) {
             <p className="note">no bio found yet.</p>
           )}
           <div className="mt-5 flex flex-wrap gap-3">
-            <Link href={`/artist?id=${cur.artistId}`} onClick={onClose} className={btnPrimary}>
-              All their songs <Icon name="right" className="size-4" />
-            </Link>
+            {cur.artistId && (
+              <Link href={`/artist?id=${cur.artistId}`} onClick={onClose} className={btnPrimary}>
+                All their songs <Icon name="right" className="size-4" />
+              </Link>
+            )}
             {data && (
               <a href={data.url} target="_blank" rel="noreferrer" className={btnSecondary}>
                 Wikipedia ↗
