@@ -54,7 +54,7 @@ export function StackHero({ albums, songs }: { albums: Album[]; songs: Track[] }
           <button className={btnPrimary} disabled={!songs.length} onClick={() => playList(songs, 0)}>
             <Icon name="play" className="size-4" /> Play the Top {songs.length || 50}
           </button>
-          <Link href="/new" className={btnSecondary}>
+          <Link prefetch={false} href="/new" className={btnSecondary}>
             What&apos;s new <Icon name="right" className="size-4" />
           </Link>
         </div>
@@ -71,7 +71,7 @@ export function StackHero({ albums, songs }: { albums: Album[]; songs: Track[] }
             const style = { transform: `translate(${POSE[k].x}px, ${POSE[k].y}px) rotate(${POSE[k].r}deg)`, zIndex: 10 - k };
             const img = <img src={a.art} alt="" className="size-full rounded-xl object-cover" />;
             return k === 0 ? (
-              <Link key={a.id} href={`/album?id=${a.id}`} aria-label={`Open ${a.title}`} className={`${cls} hover:!rotate-0`} style={style}>
+              <Link prefetch={false} key={a.id} href={`/album?id=${a.id}`} aria-label={`Open ${a.title}`} className={`${cls} hover:!rotate-0`} style={style}>
                 {img}
               </Link>
             ) : (

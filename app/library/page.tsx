@@ -64,7 +64,7 @@ export default function LibraryPage() {
       </PageHeader>
       <div className="no-scrollbar -mx-4 mb-6 flex gap-2 overflow-x-auto px-4 md:mx-0 md:px-0">
         {TABS.map(([k, label]) => (
-          <Link
+          <Link prefetch={false}
             key={k}
             href={`/library?tab=${k}`}
             className={`label-cond shrink-0 rounded-full px-4 py-1.5 text-[15px] ${tab === k ? "border-2 border-[var(--ink)] bg-ink text-paper" : "border-2 border-[var(--line)] text-ink/70 hover:bg-ink/[0.06]"}`}
@@ -72,7 +72,7 @@ export default function LibraryPage() {
             {label}
           </Link>
         ))}
-        <Link href="/party" className="label-cond flex shrink-0 items-center gap-1.5 rounded-full border-2 border-[var(--line)] px-4 py-1.5 text-[15px] text-ink/70 hover:bg-ink/[0.06]">
+        <Link prefetch={false} href="/party" className="label-cond flex shrink-0 items-center gap-1.5 rounded-full border-2 border-[var(--line)] px-4 py-1.5 text-[15px] text-ink/70 hover:bg-ink/[0.06]">
           <Icon name="radio" className="size-4 text-[var(--accent)]" />
           Listen Together
         </Link>
@@ -120,7 +120,7 @@ export default function LibraryPage() {
           <ul>
             {[...artists].filter(([id]) => id).map(([id, name]) => (
               <li key={id}>
-                <Link href={`/artist?id=${id}`} className="flex items-center gap-3 border-b border-ink/[0.06] py-2.5 hover:text-[var(--accent)]">
+                <Link prefetch={false} href={`/artist?id=${id}`} className="flex items-center gap-3 border-b border-ink/[0.06] py-2.5 hover:text-[var(--accent)]">
                   <span className="grid size-11 place-items-center rounded-full bg-ink/10 font-bold">{name[0]}</span>
                   {name}
                 </Link>

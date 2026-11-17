@@ -21,7 +21,7 @@ export default function ReplayPage() {
 
   return (
     <div className="max-w-2xl">
-      <Link href="/account" className="tap label-cond mb-3 inline-flex items-center gap-1 text-[15px] text-ink/60 hover:text-ink">
+      <Link prefetch={false} href="/account" className="tap label-cond mb-3 inline-flex items-center gap-1 text-[15px] text-ink/60 hover:text-ink">
         <Icon name="left" className="size-5" /> Account
       </Link>
       <PageHeader title="Your" hl="Replay" eyebrow="On repeat" />

@@ -76,7 +76,7 @@ export function SpotifyImport({ onClose }: { onClose: () => void }) {
             <p className="mb-4 text-sm text-ink/70">
               Importing uses Spotify&apos;s official API, so it needs your own free Spotify app (two minutes, one time). Add its Client ID and secret in Settings.
             </p>
-            <Link href="/settings?s=connections" onClick={onClose} className="brut label-cond block rounded-xl bg-accent py-2.5 text-center text-[17px] text-paper">
+            <Link prefetch={false} href="/settings?s=connections" onClick={onClose} className="brut label-cond block rounded-xl bg-accent py-2.5 text-center text-[17px] text-paper">
               Set up in Settings →
             </Link>
           </>

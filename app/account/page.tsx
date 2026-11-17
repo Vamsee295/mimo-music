@@ -93,14 +93,14 @@ export default function AccountPage() {
       )}
 
       <div className="brut divide-y-2 divide-dashed divide-ink/15 overflow-hidden rounded-2xl bg-card">
-        <Link href="/replay" className="flex items-center justify-between px-4 py-3 hover:bg-ink/5">
+        <Link prefetch={false} href="/replay" className="flex items-center justify-between px-4 py-3 hover:bg-ink/5">
           <span>
             Replay
             <span className="block text-xs text-ink/45">Your top songs and artists by week, month and year</span>
           </span>
           <Icon name="right" className="size-5 text-ink/30" />
         </Link>
-        <Link href="/settings" className="flex items-center justify-between px-4 py-3 hover:bg-ink/5">
+        <Link prefetch={false} href="/settings" className="flex items-center justify-between px-4 py-3 hover:bg-ink/5">
           Settings <Icon name="right" className="size-5 text-ink/30" />
         </Link>
         <button onClick={exportLibrary} className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-ink/5">

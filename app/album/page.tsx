@@ -28,7 +28,7 @@ export default function AlbumPage() {
             {album.title}
             {album.explicit && <Explicit />}
           </h1>
-          <Link href={`/artist?id=${album.artistId}`} className="label-cond mt-2 inline-block text-[22px] text-accent hover:underline">
+          <Link prefetch={false} href={`/artist?id=${album.artistId}`} className="label-cond mt-2 inline-block text-[22px] text-accent hover:underline">
             {album.artist}
           </Link>
           <p className="eyebrow mt-1 !text-ink/55">

@@ -80,7 +80,7 @@ export default function SearchPage() {
             <Section title="Artists">
               <Shelf>
                 {res.data.artists.map((a) => (
-                  <Link
+                  <Link prefetch={false}
                     key={a.id}
                     href={`/artist?id=${a.id}`}
                     onClick={() => remember({ kind: "artist", id: a.id, name: a.name })}
@@ -223,7 +223,7 @@ function GenreTile({ genre, index, size }: { genre: (typeof GENRES)[number]; ind
   const top = albums[cur];
 
   return (
-    <Link
+    <Link prefetch={false}
       href={`/genre?id=${genre.id}`}
       className={`brut brut-hover theme-dark group relative isolate overflow-hidden rounded-2xl bg-paper text-ink ${
         size === "lead" ? "col-span-2 row-span-2" : size === "wide" ? "col-span-2" : ""

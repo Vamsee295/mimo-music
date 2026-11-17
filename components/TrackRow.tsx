@@ -92,8 +92,8 @@ export function TrackMenu({ track, onRemove, removeLabel = "Remove from Playlist
                 )}
                 {onRemove && <button className={item} onClick={act(onRemove)}>{removeLabel}</button>}
                 <div className="my-1 border-t border-ink/10" />
-                {track.albumId && <Link className={item} href={`/album?id=${track.albumId}`} onClick={close}>Go to Album</Link>}
-                {track.artistId && <Link className={item} href={`/artist?id=${track.artistId}`} onClick={close}>Go to Artist</Link>}
+                {track.albumId && <Link prefetch={false} className={item} href={`/album?id=${track.albumId}`} onClick={close}>Go to Album</Link>}
+                {track.artistId && <Link prefetch={false} className={item} href={`/artist?id=${track.artistId}`} onClick={close}>Go to Artist</Link>}
               </>
             ) : (
               <LibraryPicker track={track} row={item} onDone={close} />
@@ -170,7 +170,7 @@ export function TrackRow({
       </button>
       {!album &&
         (track.albumId ? (
-          <Link href={`/album?id=${track.albumId}`} className="hidden truncate text-[13px] text-ink/50 hover:underline lg:block">
+          <Link prefetch={false} href={`/album?id=${track.albumId}`} className="hidden truncate text-[13px] text-ink/50 hover:underline lg:block">
             {track.album}
           </Link>
         ) : (

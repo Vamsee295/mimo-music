@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useLibrary, ytKey } from "@/lib/library";
-import { QuotaError, findVideo, forgetVideo, loadYT } from "@/lib/youtube";
+import { QuotaError, findVideo, forgetVideo, lengthOff, loadYT, markChecked, wasChecked } from "@/lib/youtube";
 import { isLocal, localBlob, localUrl } from "@/lib/local";
 import { usePlayer, type Track } from "@/lib/store";
 import { LibraryPicker } from "./AddToLibrary";
@@ -30,6 +30,17 @@ export type Mode = "audio" | "yt" | "finding";
 
 // ── Resume after the app was closed: the current song's last position ──
 const POS_KEY = "mimo:position";
+// "music was playing a moment ago": written every few seconds while playing, removed on pause. If the page comes
+// back within 20 s of it, the page crashed (Android reloads it, see MainActivity) → carry on playing.
+const ALIVE_KEY = "mimo:playing-at";
+const resumeAfterCrash = (() => {
+  try {
+    const t = Number(localStorage.getItem(ALIVE_KEY));
+    return Number.isFinite(t) && Date.now() - t < 20_000;
+  } catch {
+    return false;
+  }
+})();
 const safeSet = (k: string, v: string) => {
   try {
     localStorage.setItem(k, v);
@@ -107,18 +118,23 @@ function advance() {
 
 export function PlayerBar() {
   const audio = useRef<HTMLAudioElement>(null);
-  const [time, setTime] = useState(0);
-  const [dur, setDur] = useState(0);
+  // The song's clock. Every reading is stamped with the song it belongs to, so when the song changes the screen and
+  // the notification show 0:00 at once, not the previous song's position and length (the bar that flickered and
+  // "started half way"). keyRef holds the current song's key.
+  const [clock, setClock] = useState({ key: "", time: 0, dur: 0 });
+  const setTime = (t: number) => setClock((c) => ({ key: keyRef.current, time: t, dur: c.key === keyRef.current ? c.dur : 0 }));
+  const setDur = (d: number) => setClock((c) => ({ key: keyRef.current, dur: d, time: c.key === keyRef.current ? c.time : 0 }));
   const [panel, setPanel] = useState<"none" | "queue" | "full">("none");
   const ytHost = useRef<HTMLDivElement>(null);
   const ytMount = useRef<HTMLDivElement>(null); // the iframe goes in here, under the album-art cover
-  const yt = useRef<YT.Player | null>(null); // the player you hear
+  // ONE YouTube player only. A second hidden "gapless" player was tried and removed: two players roughly
+  // doubled the WebView's memory (Android then killed the page mid-song) and YouTube paused the song you were
+  // hearing when the hidden one started buffering.
+  const yt = useRef<YT.Player | null>(null);
   const ytReady = useRef<Promise<YT.Player> | null>(null);
-  // Gapless: a second hidden player buffers the next song (muted, paused at 0) in the last seconds of this one;
-  // when the song changes they swap, so the next one starts at once instead of loading for 1–2 s.
-  const standby = useRef<YT.Player | null>(null);
-  const standbyReady = useRef<Promise<YT.Player> | null>(null);
-  const pre = useRef<{ trackId: string; id: string; ready: boolean } | null>(null);
+  const wantVideo = useRef<string | undefined>(undefined); // the YouTube video the CURRENT song should be playing
+  const retry = useRef({ key: "", n: 0 }); // connection errors on this song so far
+  const [retryTick, setRetryTick] = useState(0); // bumped when the network is back, to look the song up again
   const [slot, setSlot] = useState<HTMLElement | null>(null); // the player's spot on the art in Now Playing
   const onScreen = useForeground(); // false while the Android app is in the background / screen off
 
@@ -145,7 +161,7 @@ export function PlayerBar() {
   }, []);
   // yt = YouTube video id (official player) · url = Your Music file in the page's <audio> · stream = a downloaded
   // song in Android's native engine · none = no full version → why + what to do (skip this song / stop)
-  const [src, setSrc] = useState<{ key: string; yt?: string; url?: string; stream?: Stream; why?: string; fail?: "skip" | "stop" }>();
+  const [src, setSrc] = useState<{ key: string; yt?: string; url?: string; stream?: Stream; why?: string; fail?: "skip" | "stop" | "wait" }>();
   // on Settings the banner would cover the key field it points to
   const onSettings = usePathname() === "/settings";
   // the banner's ✕: hides that message (a different message, e.g. a new problem, still shows)
@@ -161,7 +177,11 @@ export function PlayerBar() {
   const keyRef = useRef(curKey);
   useEffect(() => {
     keyRef.current = curKey;
+    wantVideo.current = src?.key === curKey ? src.yt : undefined;
   });
+  const fresh = clock.key === curKey; // false right after a song change, until the player reports this song
+  const time = fresh ? clock.time : 0;
+  const dur = fresh ? clock.dur : 0;
   // which song the YouTube player was last told to load, and when (see "3. play / pause" and the PAUSED event)
   const loaded = useRef({ key: "", at: 0 });
   const resumeAt = useRef({ key: "", t: 0 });
@@ -187,14 +207,6 @@ export function PlayerBar() {
             events: {
               onReady: () => resolve(p),
               onStateChange: (e) => {
-                if (p !== yt.current) {
-                  // the standby player: once the next song is buffered and playing (muted), hold it at the start
-                  if (e.data === api.PlayerState.PLAYING && pre.current && !pre.current.ready) {
-                    p.pauseVideo();
-                    pre.current.ready = true;
-                  }
-                  return;
-                }
                 const st = usePlayer.getState();
                 if (e.data === api.PlayerState.ENDED) {
                   // "End of this song" sleep timer beats Repeat One
@@ -212,16 +224,42 @@ export function PlayerBar() {
                   // says "paused" while one video is swapped for the next and just before a video ends.
                   const left = (p.getDuration?.() || 0) - (p.getCurrentTime?.() || 0);
                   const swapping = Date.now() - loaded.current.at < 1500 || loaded.current.key !== keyRef.current;
-                  if (!swapping && !(p.getDuration?.() > 0 && left < 1.5)) st.setPlaying(false);
+                  // When the connection runs dry YouTube reports "paused" too. That's a stall, not YOU pausing: keep
+                  // wanting to play, and the "online" handler / stall watchdog resume it (before this, the song stayed
+                  // paused for good after a signal drop and needed an app restart).
+                  const ahead = (p.getVideoLoadedFraction?.() ?? 1) * (p.getDuration?.() || 0) - (p.getCurrentTime?.() || 0);
+                  const dried = !navigator.onLine || ahead < 2;
+                  if (!swapping && !dried && !(p.getDuration?.() > 0 && left < 1.5)) st.setPlaying(false);
                 }
               },
-              // 100 = removed, 101/150 = the owner blocks playback outside YouTube → remember, skip
-              onError: () => {
-                if (p !== yt.current) return void (pre.current = null); // couldn't buffer the next song: it loads normally
+              onError: (e) => {
                 const st = usePlayer.getState();
                 const t = st.queue[st.index];
-                if (t) forgetVideo(t.id);
-                setSrc({ key: keyRef.current, why: "This song's owner blocks playback outside YouTube — skipping.", fail: "skip" });
+                const key = keyRef.current;
+                // 100 removed · 101/150 the owner blocks playback outside YouTube · 2 bad id: this song can't be
+                // played → remember that, skip it
+                if ([100, 101, 150, 2].includes(e.data)) {
+                  if (t) forgetVideo(t.id);
+                  setSrc({ key, why: "This song isn't available on YouTube — skipping.", fail: "skip" });
+                  return;
+                }
+                // 5 and anything else is almost always the connection (weak mobile data), not the song. Try again
+                // from the same second, a few times, and NEVER remember the song as unplayable (that used to
+                // blacklist good songs for good after one hiccup).
+                const r = retry.current.key === key ? retry.current : (retry.current = { key, n: 0 });
+                r.n++;
+                const id = wantVideo.current;
+                if (!id || r.n > 4) {
+                  const online = navigator.onLine;
+                  setSrc({ key, why: online ? "Couldn't play this song — skipping." : "No connection — waiting for it to come back…", fail: online ? "skip" : "wait" });
+                  return;
+                }
+                const at = p.getCurrentTime?.() || 0;
+                setTimeout(() => {
+                  if (keyRef.current !== key) return;
+                  loaded.current = { key, at: Date.now() };
+                  p.loadVideoById({ videoId: id, startSeconds: at });
+                }, r.n * 2000);
               },
             },
           });
@@ -233,19 +271,12 @@ export function PlayerBar() {
       p.setVolume(Math.round(usePlayer.getState().volume * 100));
       return p;
     }));
-  const ensureStandby = () =>
-    (standbyReady.current ??= ensurePlayer().then(async () => {
-      const p = await makePlayer(await loadYT());
-      p.mute();
-      standby.current = p;
-      return p;
-    }));
 
   // 1. pick a full-length source: Your Music file, a download, else the song on YouTube. Never the 30s preview.
   useEffect(() => {
     if (!cur) return;
     let live = true;
-    (async (): Promise<{ yt?: string; url?: string; stream?: Stream; why?: string; fail?: "skip" | "stop" }> => {
+    (async (): Promise<{ yt?: string; url?: string; stream?: Stream; why?: string; fail?: "skip" | "stop" | "wait" }> => {
       // Your Music: play the stored file — no YouTube, no data. Android: in the native engine (ExoPlayer, like
       // BitChord), so it plays on through screen off / on; the first play copies the file there once.
       if (isLocal(cur)) {
@@ -280,14 +311,38 @@ export function PlayerBar() {
           return { why, fail: "stop" }; // quota / bad key / referrer: retrying won't help
         }
       }
-      // still failing after 3 tries: move on rather than leave the night silent
-      return { why: "Couldn't reach YouTube for this song — skipping to the next.", fail: "skip" };
+      // still failing after 3 tries. No connection: wait for it (skipping would burn through the whole queue);
+      // otherwise move on rather than leave the night silent
+      return navigator.onLine
+        ? { why: "Couldn't reach YouTube for this song — skipping to the next.", fail: "skip" }
+        : { why: "No connection — waiting for it to come back…", fail: "wait" };
     })().then((r) => live && setSrc({ key: curKey, ...r }));
     return () => {
       live = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [curKey, retryTick]);
+
+  // The song changed: stop the old video NOW. Loading the new one can take many seconds on weak data, and until
+  // then you'd hear the previous song under the new song's title (and see its time on the new song).
+  useEffect(() => {
+    if (cur) yt.current?.pauseVideo?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [curKey]);
+
+  // The connection came back: carry on where it stopped (a lookup that was waiting, or a song that stalled).
+  useEffect(() => {
+    const back = () => {
+      if (src?.key === curKey && src.fail === "wait") return setRetryTick((n) => n + 1);
+      const p = yt.current;
+      const id = wantVideo.current;
+      if (!p || !id || !usePlayer.getState().playing || p.getPlayerState?.() === 1) return;
+      loaded.current = { key: keyRef.current, at: Date.now() };
+      p.loadVideoById({ videoId: id, startSeconds: p.getCurrentTime?.() || 0 });
+    };
+    window.addEventListener("online", back);
+    return () => window.removeEventListener("online", back);
+  }, [src, curKey]);
 
   // 2. load it into the right engine
   useEffect(() => {
@@ -301,6 +356,7 @@ export function PlayerBar() {
       reopened.current = true;
       const saved = savedPosition();
       if (saved?.id === cur.id) at = saved.t;
+      if (resumeAfterCrash && saved?.id === cur.id && !usePlayer.getState().playing) usePlayer.getState().setPlaying(true);
     }
     streamKey.current = src.stream?.key ?? "";
     if (src.yt) {
@@ -308,23 +364,6 @@ export function PlayerBar() {
       a.removeAttribute("src");
       engine.unload();
       const id = src.yt;
-      const sb = standby.current;
-      if (sb && pre.current?.id === id && at === 0) {
-        // gapless: the next song is already buffered in the standby player → swap them, no loading gap
-        const old = yt.current;
-        yt.current = sb;
-        standby.current = old;
-        pre.current = null;
-        loaded.current = { key: curKey, at: Date.now() };
-        sb.setVolume(Math.round(usePlayer.getState().volume * 100));
-        sb.unMute();
-        sb.seekTo(0, true);
-        if (usePlayer.getState().playing) sb.playVideo();
-        else sb.pauseVideo();
-        old?.mute();
-        old?.stopVideo();
-        return;
-      }
       ensurePlayer().then((p) => {
         if (keyRef.current !== curKey) return;
         loaded.current = { key: curKey, at: Date.now() };
@@ -350,7 +389,9 @@ export function PlayerBar() {
       a.pause();
       a.removeAttribute("src");
       if (src.fail === "stop") usePlayer.getState().setPlaying(false);
-      else {
+      else if (src.fail === "wait") {
+        /* no connection: stay on this song, the "online" event looks it up again */
+      } else {
         const id = setTimeout(() => keyRef.current === curKey && advance(), 1800);
         return () => clearTimeout(id);
       }
@@ -391,6 +432,10 @@ export function PlayerBar() {
       if (!p?.getCurrentTime) return;
       // safety net for the same thing: sound while Mimo says paused → pause it
       if (!usePlayer.getState().playing && p.getPlayerState?.() === 1) p.pauseVideo();
+      // the previous song's video is still loaded: its time and length aren't this song's
+      const want = wantVideo.current;
+      const vid = p.getVideoData?.()?.video_id;
+      if (!want || (vid && vid !== want)) return;
       setTime(p.getCurrentTime());
       setDur(p.getDuration() || 0);
     };
@@ -535,34 +580,68 @@ export function PlayerBar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ahead, s.playing, gapless, stream?.key]);
 
-  // Gapless for YouTube songs: in the last 15 s, buffer the next song in the standby player (muted). Skipped for
-  // Repeat One and "end of this song" sleep (no next song), and for Your Music / downloads (the native engine).
-  const nextIsYt = !!upNext && !isLocal(upNext);
+  // Stall watchdog. If a YouTube song should be playing but the player is stuck (buffering forever, stopped by
+  // itself, a dropped connection), recover without a restart: after ~6 s nudge it, after ~12 s reload the song at
+  // the same second, after ~24 s move on to the next song. Runs with the screen off too.
   useEffect(() => {
-    if (mode !== "yt" || !s.playing || !nextIsYt || !gapless) return;
-    const id = setInterval(async () => {
+    if (mode !== "yt" || !s.playing || src?.key !== curKey || !src.yt) return;
+    const id = src.yt;
+    let stuck = 0;
+    const timer = setInterval(() => {
       const p = yt.current;
-      const st = usePlayer.getState();
-      const next = st.queue[st.index + 1];
-      const k = ytKey();
-      if (!p?.getDuration || !next || !k || pre.current?.trackId === next.id) return;
-      const d = p.getDuration() || 0;
-      if (!d || d - (p.getCurrentTime() || 0) > 15) return;
-      pre.current = { trackId: next.id, id: "", ready: false }; // claimed: one buffering at a time
-      try {
-        const vid = await findVideo(next, k); // already looked up ahead (cached), so this is instant
-        if (!vid || pre.current?.trackId !== next.id) return void (pre.current = null);
-        const sb = await ensureStandby();
-        pre.current = { trackId: next.id, id: vid, ready: false };
-        sb.mute();
-        sb.loadVideoById({ videoId: vid, startSeconds: 0 });
-      } catch {
-        pre.current = null; // it just loads the normal way at the change-over
+      if (!usePlayer.getState().playing || loaded.current.key !== curKey) return (stuck = 0);
+      if (Date.now() - loaded.current.at < 6000) return; // still starting up
+      const state = p?.getPlayerState?.();
+      const vid = p?.getVideoData?.()?.video_id;
+      if (p && vid && vid !== id && (state === 1 || state === 3)) {
+        // a different video than this song's is playing (banner says one song, you hear another): put the right one back
+        loaded.current = { key: curKey, at: Date.now() };
+        p.loadVideoById({ videoId: id, startSeconds: 0 });
+        return;
       }
-    }, 1000);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, s.playing, nextIsYt, gapless, curKey]);
+      if (state === 1 || state === 0) return void (stuck = 0); // playing, or ended (the change-over handles that)
+      if (!navigator.onLine) return; // no connection: wait for it ("online" picks the song up), never skip
+      stuck++;
+      if (stuck === 2) p?.playVideo();
+      else if (stuck === 5 && p) {
+        const t = p.getCurrentTime?.() || 0;
+        loaded.current = { key: curKey, at: Date.now() };
+        p.loadVideoById({ videoId: id, startSeconds: t });
+      } else if (stuck >= 20) {
+        stuck = 0; // a full minute of nothing: weak data can need a while, so be patient before giving up on the song
+        advance();
+      }
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [mode, s.playing, curKey, src]);
+
+  // Double-check the match while it plays, using what the player itself reports (free: no API call). If the video's
+  // length is far from the album track it's a different cut (film video with an intro, a jukebox …), so look
+  // for a better video ONCE per song and switch to it. Party guests play exactly the host's video.
+  useEffect(() => {
+    if (mode !== "yt" || !s.playing || src?.key !== curKey || !src.yt || !cur || isGuest() || wasChecked(cur.id)) return;
+    const key = curKey;
+    const track = cur;
+    const loadedId = src.yt;
+    const timer = setInterval(async () => {
+      const p = yt.current;
+      if (!p || keyRef.current !== key || p.getPlayerState?.() !== 1 || p.getVideoData?.()?.video_id !== loadedId) return;
+      const secs = p.getDuration?.() || 0;
+      if (!secs) return;
+      clearInterval(timer);
+      markChecked(track.id); // whatever happens, a song is re-searched at most once, ever
+      if (!lengthOff(secs, track.duration)) return;
+      const k = ytKey();
+      if (!k) return;
+      try {
+        const better = await findVideo(track, k, { exclude: [loadedId], force: true });
+        if (better && better !== loadedId && keyRef.current === key) setSrc({ key, yt: better });
+      } catch {
+        /* quota or network: keep what's playing */
+      }
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [mode, s.playing, curKey, src, cur]);
 
   // Repeat One for native songs loops inside the native engine ("End of this song" sleep beats it)
   useEffect(() => {
@@ -582,6 +661,7 @@ export function PlayerBar() {
     return () => void setStatusBarHidden(false);
   }, [hideStatusBar, panel]);
 
+  const dataSaver = useLibrary((st) => st.settings.dataSaver);
   const crossfade = useLibrary((st) => st.settings.crossfade);
   useEffect(() => {
     engine.setFade(crossfade);
@@ -618,8 +698,16 @@ export function PlayerBar() {
     engine.setVolume(s.volume);
   }, [s.volume]);
 
-  const position = () =>
-    mode === "yt" ? (yt.current?.getCurrentTime() ?? 0) : stream ? nativeTime.current : (audio.current?.currentTime ?? 0);
+  const position = () => {
+    if (mode === "yt") {
+      const p = yt.current;
+      const want = wantVideo.current;
+      const vid = p?.getVideoData?.()?.video_id;
+      if (!p || !want || (vid && vid !== want)) return 0; // the previous song's video is still loaded
+      return p.getCurrentTime() ?? 0;
+    }
+    return stream ? nativeTime.current : (audio.current?.currentTime ?? 0);
+  };
   const seek = (t: number) => {
     if (mode === "yt") yt.current?.seekTo(t, true);
     else if (stream) {
@@ -641,13 +729,22 @@ export function PlayerBar() {
     const save = () => {
       const t = position();
       if (t > 1) safeSet(POS_KEY, JSON.stringify({ id: cur.id, t }));
+      safeSet(ALIVE_KEY, String(Date.now()));
+    };
+    const left = () => {
+      save();
+      try {
+        localStorage.removeItem(ALIVE_KEY); // a normal close isn't a crash: don't auto-play next time
+      } catch {
+        /* storage blocked */
+      }
     };
     const id = setInterval(save, 5000);
-    window.addEventListener("pagehide", save);
+    window.addEventListener("pagehide", left);
     return () => {
-      save();
+      left(); // paused / song changed (the next song's run writes it again right away)
       clearInterval(id);
-      window.removeEventListener("pagehide", save);
+      window.removeEventListener("pagehide", left);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cur?.id, s.playing, mode]);
@@ -836,7 +933,12 @@ export function PlayerBar() {
           hidden ? "pointer-events-none left-0 top-0 -z-50 size-[205px] opacity-0" : "z-[60]"
         }`}
       >
-        <div ref={ytMount} className="relative size-full [&>iframe]:absolute [&>iframe]:inset-0 [&>iframe]:size-full" />
+        <div
+          ref={ytMount}
+          // YouTube picks the video quality from the player's size. The cover hides the video anyway, so with Save
+          // mobile data on (default) the player stays at YouTube's 200×200 minimum however big the cover is.
+          className={dataSaver ? "absolute left-0 top-0 size-[200px] [&>iframe]:size-full" : "relative size-full [&>iframe]:absolute [&>iframe]:inset-0 [&>iframe]:size-full"}
+        />
         {cur && <img src={cur.art} alt="" className={`absolute inset-0 size-full object-cover ${hidden ? "pointer-events-none" : ""}`} />}
       </div>
 
@@ -856,7 +958,7 @@ export function PlayerBar() {
 
       {/* in a party: a small pill at the top, back to the party page (requests waiting show on it) */}
       {party.live && !onParty && panel !== "full" && (
-        <Link
+        <Link prefetch={false}
           href="/party"
           className="brut label-cond fixed left-1/2 top-[max(0.6rem,env(safe-area-inset-top))] z-40 flex -translate-x-1/2 items-center gap-2 rounded-full bg-ink px-3.5 py-1.5 text-[13px] text-paper"
         >
@@ -875,7 +977,7 @@ export function PlayerBar() {
           <Icon name="info" className="size-5 shrink-0" />
           <span className="min-w-0 flex-1">{src.why}</span>
           {src.fail === "stop" && (
-            <Link href="/settings?s=youtube" className="label-cond shrink-0 rounded-lg border-2 border-[var(--ink)] bg-paper px-2.5 py-1 text-[13px] text-ink">
+            <Link prefetch={false} href="/settings?s=youtube" className="label-cond shrink-0 rounded-lg border-2 border-[var(--ink)] bg-paper px-2.5 py-1 text-[13px] text-ink">
               Settings
             </Link>
           )}
@@ -1280,7 +1382,7 @@ function NowPlaying({
           <p className="display line-clamp-2 text-[32px] text-white [@media(max-height:720px)]:line-clamp-1 [@media(max-height:720px)]:text-[26px]">{title}</p>
         )}
         {cur.artistId ? (
-          <Link href={`/artist?id=${cur.artistId}`} onClick={onClose} className={`block truncate text-white/60 hover:underline ${small ? "text-[15px]" : "text-[19px]"}`}>
+          <Link prefetch={false} href={`/artist?id=${cur.artistId}`} onClick={onClose} className={`block truncate text-white/60 hover:underline ${small ? "text-[15px]" : "text-[19px]"}`}>
             {cur.artist}
           </Link>
         ) : (
@@ -1321,7 +1423,7 @@ function NowPlaying({
         >
           <span className="h-1.5 w-10 rounded-full bg-white/40" />
         </button>
-        <Link
+        <Link prefetch={false}
           href={cur.albumId ? `/album?id=${cur.albumId}` : "#"}
           onClick={(e) => (cur.albumId ? onClose() : e.preventDefault())}
           className={`mb-3 block truncate text-center md:mb-6 ${cur.albumId ? "hover:underline" : "cursor-default"}`}
@@ -1373,7 +1475,7 @@ function NowPlaying({
               {why &&
                 (!hasKey ? (
                   // one slim line instead of a box: the controls don't jump down
-                  <Link href="/settings?s=youtube" onClick={onClose} className="mx-auto mt-1 block w-fit max-w-full truncate whitespace-nowrap rounded-full bg-white/10 px-3 py-1 text-[12px] font-medium text-white/85">
+                  <Link prefetch={false} href="/settings?s=youtube" onClick={onClose} className="mx-auto mt-1 block w-fit max-w-full truncate whitespace-nowrap rounded-full bg-white/10 px-3 py-1 text-[12px] font-medium text-white/85">
                     Add YouTube key to play full songs →
                   </Link>
                 ) : (
@@ -1588,7 +1690,7 @@ function SongMenu({ cur, onClose, closePlayer, showArtist }: { cur: Track; onClo
           </span>
         </button>
         {line}
-        <Link href="/party" onClick={() => (onClose(), closePlayer())} className={row}>
+        <Link prefetch={false} href="/party" onClick={() => (onClose(), closePlayer())} className={row}>
           <Icon name="radio" className="size-6 shrink-0 text-white/80" />
           <span className="min-w-0">
             Listen together
@@ -1596,7 +1698,7 @@ function SongMenu({ cur, onClose, closePlayer, showArtist }: { cur: Track; onClo
           </span>
         </Link>
         {cur.albumId && (
-          <Link href={`/album?id=${cur.albumId}`} onClick={() => (onClose(), closePlayer())} className={row}>
+          <Link prefetch={false} href={`/album?id=${cur.albumId}`} onClick={() => (onClose(), closePlayer())} className={row}>
             <Icon name="library" className="size-6 shrink-0 text-white/80" />
             <span className="min-w-0">
               Open album
@@ -1605,7 +1707,7 @@ function SongMenu({ cur, onClose, closePlayer, showArtist }: { cur: Track; onClo
           </Link>
         )}
         {cur.artistId && (
-          <Link href={`/artist?id=${cur.artistId}`} onClick={() => (onClose(), closePlayer())} className={row}>
+          <Link prefetch={false} href={`/artist?id=${cur.artistId}`} onClick={() => (onClose(), closePlayer())} className={row}>
             <Icon name="user" className="size-6 shrink-0 text-white/80" />
             <span className="min-w-0">
               Open artist
@@ -1870,7 +1972,7 @@ function ArtistPanel({ cur, onClose }: { cur: Track; onClose: () => void }) {
           )}
           <div className="mt-5 flex flex-wrap gap-3">
             {cur.artistId && (
-              <Link href={`/artist?id=${cur.artistId}`} onClick={onClose} className={btnPrimary}>
+              <Link prefetch={false} href={`/artist?id=${cur.artistId}`} onClick={onClose} className={btnPrimary}>
                 All their songs <Icon name="right" className="size-4" />
               </Link>
             )}

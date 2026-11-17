@@ -64,3 +64,30 @@ assert.ok(looksLikeKey(K));
 assert.ok(!looksLikeKey(K.slice(0, 30)));
 assert.ok(!looksLikeKey("123-abc.apps.googleusercontent.com"));
 console.log("key cleaning ok");
+
+// ── is it really THIS song? (the banner said one song, another played) ──────────────────────────────────────
+import { choose, lengthClose, lengthOff, titleMatch } from "./youtube";
+const song = { title: "Gaali Vaaluga (From \"Agnyaathavaasi\")", duration: 207 };
+const cand = (id: string, title: string, seconds: number, channel = "Label") => ({ id, title, channel, seconds });
+
+assert.equal(titleMatch("Gaali Vaaluga (From \"Agnyaathavaasi\")", "Gaali Vaaluga Video Song | Agnyaathavaasi"), 1, "'From …' is ignored, words are matched");
+assert.ok(titleMatch("Gaali Vaaluga", "Totally Different Song") < 0.6);
+assert.equal(titleMatch("Don'u Don'u Don'u (The Don's Romance)", "Don'u Don'u Don'u Lyric Video"), 1, "subtitles in brackets are ignored");
+assert.equal(titleMatch("Hukum - Single", "Anirudh - Hukum (Official Audio)"), 1, "'Artist - Song' forms match");
+assert.equal(titleMatch("", "anything"), 1, "no words to judge by (other script): don't reject");
+assert.ok(lengthClose(209, 207) && lengthClose(222, 207) && !lengthClose(261, 207), "≤ 15 s or 8%");
+assert.ok(lengthOff(261, 207) && !lengthOff(210, 207) && !lengthOff(0, 207), "unknown length is never 'off'");
+
+// the album audio wins over the film video (+54 s) even though both match the title
+assert.equal(choose(song, [cand("film", "Gaali Vaaluga Video Song | Agnyaathavaasi", 261), cand("audio", "Gaali Vaaluga", 208, "Anirudh Ravichander - Topic")])?.id, "audio");
+// a different song with a similar title but the right length is NOT accepted
+assert.equal(choose(song, [cand("other", "Gaali Kodhi Mashup", 207)]), null, "same length, wrong title → not this song");
+// a jukebox / medley (way longer) is not accepted either
+assert.equal(choose(song, [cand("juke", "Agnyaathavaasi All Songs Jukebox", 1900)]), null);
+// only another cut exists (same title, +54 s): better than silence
+assert.equal(choose(song, [cand("film", "Gaali Vaaluga Video Song", 261)])?.id, "film");
+// the cut is more than 50% off: that's a different thing
+assert.equal(choose(song, [cand("long", "Gaali Vaaluga Full Movie Scene", 400)]), null);
+// nothing found
+assert.equal(choose(song, []), null);
+console.log("match checks ok");

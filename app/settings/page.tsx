@@ -87,7 +87,7 @@ export default function SettingsPage() {
   if (open)
     return (
       <div className="max-w-2xl">
-        <Link href="/settings" className="tap label-cond mb-3 inline-flex items-center gap-1 text-[15px] text-ink/60 hover:text-ink">
+        <Link prefetch={false} href="/settings" className="tap label-cond mb-3 inline-flex items-center gap-1 text-[15px] text-ink/60 hover:text-ink">
           <Icon name="left" className="size-5" /> Settings
         </Link>
         <PageHeader title={open.title} eyebrow="Settings" />
@@ -113,7 +113,7 @@ export default function SettingsPage() {
       {shown.length ? (
         <div className="brut divide-y-2 divide-dashed divide-ink/12 overflow-hidden rounded-2xl bg-card">
           {shown.map((x) => (
-            <Link key={x.id} href={`/settings?s=${x.id}`} className="flex min-h-14 items-center gap-4 px-4 py-3 hover:bg-ink/5">
+            <Link prefetch={false} key={x.id} href={`/settings?s=${x.id}`} className="flex min-h-14 items-center gap-4 px-4 py-3 hover:bg-ink/5">
               <span className="grid size-9 shrink-0 place-items-center rounded-full bg-ink/[0.07] text-ink/70">
                 <Icon name={x.icon} className="size-5" />
               </span>
@@ -176,6 +176,11 @@ function SectionBody({ id }: { id: SectionId }) {
   if (id === "playback")
     return (
       <>
+        <Group title="Data">
+          <Row label="Save mobile data" hint="Keeps the hidden video as small as possible, so each song uses far less data. Recommended">
+            <Toggle label="Save mobile data" on={settings.dataSaver} onChange={(dataSaver) => setSettings({ dataSaver })} />
+          </Row>
+        </Group>
         <Group title="Queue">
           <Row label="Autoplay" hint="When your queue ends, keep playing similar songs">
             <Toggle label="Autoplay" on={settings.autoplay} onChange={(autoplay) => setSettings({ autoplay })} />
@@ -354,7 +359,7 @@ function SectionBody({ id }: { id: SectionId }) {
 
 function LinkRow({ href, label, hint }: { href: string; label: string; hint: string }) {
   return (
-    <Link href={href} className="flex min-h-12 items-center justify-between gap-4 px-4 py-2.5 hover:bg-ink/5">
+    <Link prefetch={false} href={href} className="flex min-h-12 items-center justify-between gap-4 px-4 py-2.5 hover:bg-ink/5">
       <span>
         <span className="block text-[15px]">{label}</span>
         <span className="block text-xs text-ink/40">{hint}</span>

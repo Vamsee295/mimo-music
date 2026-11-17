@@ -305,7 +305,7 @@ export function LibraryGrid() {
       ) : view === "grid" ? (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-7">
           {shown.map((it) => (
-            <Link key={it.key} {...linkProps(it)} className="group select-none [-webkit-touch-callout:none]">
+            <Link prefetch={false} key={it.key} {...linkProps(it)} className="group select-none [-webkit-touch-callout:none]">
               <div className="brut brut-hover rounded-2xl bg-card p-2 group-hover:-rotate-1">
                 {it.art(true)}
                 <div className="flex items-start gap-1 pb-1 pl-1 pt-2.5">
@@ -326,7 +326,7 @@ export function LibraryGrid() {
         <ul>
           {shown.map((it) => (
             <li key={it.key}>
-              <Link {...linkProps(it)} className="flex select-none items-center gap-3 rounded-xl px-2 py-2 [-webkit-touch-callout:none] hover:bg-ink/[0.05]">
+              <Link prefetch={false} {...linkProps(it)} className="flex select-none items-center gap-3 rounded-xl px-2 py-2 [-webkit-touch-callout:none] hover:bg-ink/[0.05]">
                 <span className="w-12 shrink-0">{it.art(false)}</span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[15px] font-medium">{it.title}</span>

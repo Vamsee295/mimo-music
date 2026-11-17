@@ -36,7 +36,7 @@ export default function LikedPage() {
       ) : (
         <div className="py-16 text-center">
           <p className="note mb-4">tap ♥ on any song and it lands here.</p>
-          <Link href="/" className="label-cond text-accent underline underline-offset-4">
+          <Link prefetch={false} href="/" className="label-cond text-accent underline underline-offset-4">
             Find something to love →
           </Link>
         </div>

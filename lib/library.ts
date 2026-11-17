@@ -147,8 +147,9 @@ export const useLibrary = create<State & Actions>()(
       toggleLike: (t) =>
         set((s) => {
           if (s.liked.some((x) => x.id === t.id)) return { liked: s.liked.filter((x) => x.id !== t.id) };
-          // loving a song puts it in your Library too (unlove leaves it there, like Apple Music)
-          return { liked: [t, ...s.liked], songs: s.songs.some((x) => x.id === t.id) ? s.songs : [...s.songs, t] }; // in the order you add them
+          // a loved song lives in Liked Songs only (it used to be copied into Library → Songs as well, which showed
+          // it twice); "Add to Library" is a separate, deliberate action
+          return { liked: [t, ...s.liked] };
         }),
 
       toggleSong: (t) =>
@@ -229,7 +230,7 @@ export const useLibrary = create<State & Actions>()(
         libLoaded = true; // saved data is in memory now → writes are safe
       },
       // older saves lack new settings keys → fill them from defaults
-      version: 6,
+      version: 7,
       // v2 = editorial redesign: old Apple pink default → rust.
       migrate: (saved, v) => {
         const s = saved as Partial<State>;
@@ -237,6 +238,8 @@ export const useLibrary = create<State & Actions>()(
         // (v3 used to reset black → rust; black is supported again via readableAccent, so it's left as chosen)
         if (v < 4) s.songs = [...(s.liked ?? [])]; // v4: Library songs start with everything already loved
         if (v < 5) s.songs = [...(s.songs ?? [])].reverse(); // v5: songs listed in the order you added them (was newest first)
+        // v7: loved songs were also copied into Library → Songs; keep them in Liked Songs only
+        if (v < 7) s.songs = (s.songs ?? []).filter((t) => !(s.liked ?? []).some((l) => l.id === t.id));
         if (v < 6 && s.settings?.crossfade) s.settings.crossfade = Math.min(8, Math.max(5, s.settings.crossfade)); // v6: 5–8 s only
         return s as State & Actions;
       },

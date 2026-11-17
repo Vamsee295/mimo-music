@@ -72,7 +72,7 @@ export function Section({
       <div className="mb-4 flex items-end justify-between gap-4">
         <h2>
           {href ? (
-            <Link href={href} className="group inline-block">
+            <Link prefetch={false} href={href} className="group inline-block">
               {heading}
               <Icon name="right" className="-mt-1 ml-1 inline size-6 transition-transform group-hover:translate-x-1" />
             </Link>
@@ -107,7 +107,7 @@ export const Explicit = () => (
 export function AlbumCard({ album }: { album: Album }) {
   const playList = usePlayer((s) => s.playList);
   return (
-    <Link href={`/album?id=${album.id}`} className="group w-40 shrink-0 snap-start md:w-48">
+    <Link prefetch={false} href={`/album?id=${album.id}`} className="group w-40 shrink-0 snap-start md:w-48">
       <div className="brut brut-hover rounded-2xl bg-card p-2 group-hover:-rotate-1">
         <div className="relative overflow-hidden rounded-xl">
           <img src={album.art} alt="" loading="lazy" className="aspect-square w-full bg-ink/5 object-cover" />

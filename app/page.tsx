@@ -67,7 +67,7 @@ export default function Home() {
       <Section title="Featured Artists" kicker="Full catalogs" note="tamil + telugu, every song →">
         <Shelf>
           {FEATURED.map((a, i) => (
-            <Link
+            <Link prefetch={false}
               key={a.id}
               href={`/artist?id=${a.id}`}
               className={`brut brut-hover flex w-72 shrink-0 snap-start items-center gap-4 rounded-2xl p-4 ${i % 2 ? "bg-card" : "bg-accent text-paper"}`}
@@ -91,7 +91,7 @@ export default function Home() {
       <Section title="Study & Sleep" kicker="Background music" note="lofi to focus, calm to drift off →">
         <div className="grid gap-4 sm:grid-cols-2">
           {(Object.keys(MOODS) as MoodId[]).map((id) => (
-            <Link key={id} href={`/library?tab=${id}`} className="brut brut-hover flex items-center gap-4 rounded-2xl bg-card p-3 pr-5">
+            <Link prefetch={false} key={id} href={`/library?tab=${id}`} className="brut brut-hover flex items-center gap-4 rounded-2xl bg-card p-3 pr-5">
               <span className="w-24 shrink-0 md:w-28">
                 <MoodCover id={id} />
               </span>

@@ -173,7 +173,7 @@ export function Sidebar() {
   const toggle = () => setSettings({ sidebarCollapsed: !collapsed });
 
   const link = ([href, label, icon]: Item) => (
-    <Link
+    <Link prefetch={false}
       key={href}
       href={href}
       title={collapsed ? label : undefined}
@@ -222,11 +222,11 @@ export function Sidebar() {
       <div className={`no-scrollbar flex h-full flex-col gap-0.5 overflow-y-auto overflow-x-hidden pb-4 pt-4 ${collapsed ? "px-3" : "px-4"}`}>
         <div className={`mb-5 flex items-center ${collapsed ? "flex-col gap-3" : "h-9 justify-between pl-1.5"}`}>
           {collapsed ? (
-            <Link href="/" aria-label="Mimo home" title="Home">
+            <Link prefetch={false} href="/" aria-label="Mimo home" title="Home">
               <LogoMark live={playing} className="size-9 text-ink" />
             </Link>
           ) : (
-            <Link href="/" className="flex items-center gap-2">
+            <Link prefetch={false} href="/" className="flex items-center gap-2">
               <LogoMark live={playing} className="size-8 text-ink" />
               <span className="display text-[30px]">Mimo</span>
               <span className="label-cond -rotate-3 rounded-md border-2 border-[var(--ink)] bg-accent px-1.5 text-[11px] leading-[18px] text-paper">free</span>
@@ -250,7 +250,7 @@ export function Sidebar() {
 
         <div className="mt-auto flex flex-col gap-0.5 pt-6">
           {link(["/settings", "Settings", "settings"])}
-          <Link
+          <Link prefetch={false}
             href="/account"
             title={collapsed ? name || "Account" : undefined}
             aria-label={collapsed ? name || "Account" : undefined}
@@ -305,7 +305,7 @@ export function TabBar() {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 [view-transition-name:tabbar] grid grid-cols-5 border-t-[2.4px] border-[var(--line)] bg-paper/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden">
       {tabs.map(([href, label, icon]) => (
-        <Link
+        <Link prefetch={false}
           key={href}
           href={href}
           className={`label-cond flex flex-col items-center gap-0.5 py-2 text-[12px] ${active(href) ? "text-accent" : "text-ink/55"}`}

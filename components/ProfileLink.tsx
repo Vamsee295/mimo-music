@@ -11,7 +11,7 @@ export function ProfileLink({ className = "" }: { className?: string }) {
   const path = usePathname();
   if (path.startsWith("/account") || path.startsWith("/settings") || path.startsWith("/replay")) return null;
   return (
-    <Link
+    <Link prefetch={false}
       href="/account"
       aria-label="Your account"
       className={`tap grid size-10 shrink-0 place-items-center rounded-full border-[2.4px] border-[var(--ink)] bg-accent font-display text-[17px] text-paper shadow-[2px_3px_0_var(--hard)] md:hidden ${className}`}
